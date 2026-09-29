@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Reguły Opisowe - Scraper Ofert TV</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Reguły Opisowe <a href="/" style="font-size: 14px;">(Powrót do panelu)</a></h1>
+        
+        <h2>Testowanie Reguł</h2>
+        <form action="/rules/test" method="post">
+            <textarea name="text" rows="4" style="width:100%;" placeholder="Wklej tekst tytułu/opisu..."></textarea><br><br>
+            <button type="submit">Testuj Reguły</button>
+        </form>
+        {% if request.query_params.test_result %}
+        <div style="margin-top: 10px; background: #eef; padding: 10px;">
+            <strong>Dopasowane reguły:</strong> {{ request.query_params.test_result }}
+        </div>
+        {% endif %}
+
+        <hr>
+
+        <h2>Dodaj Nową Regułę</h2>
+        <form action="/rules/add" method="post">
+            <label>ID Reguły (bez spacji): <input type="text" name="rule_id" required></label><br><br>
+            <label>Kategoria (np. red_flag, warning, positive, info): <input type="text" name="category" required></label><br><br>
+            <label>Aplikuj do (np. title, description, combined): <input type="text" name="applies_to" value="description"></label><br><br>
+            <label>Frazy (oddzielone przecinkiem): <input type="text" name="patterns" style="width:400px;" required></label><br><br>
+            <label>Akcja (np. flag, reject, boost): <input type="text" name="action" value="flag"></label><br><br>
+            <label>Delta Punktowa: <input type="number" name="score_delta" value="-10"></label><br><br>
+            <button type="submit">Dodaj</button>
+        </form>
+
+        <hr>
+
+        <h2>Lista Zdefiniowanych Reguł</h2>
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Kategoria</th>
+                <th>Aplikuj do</th>
+                <th>Akcja</th>
+                <th>Delta</th>
+                <th>Status</th>
+                <th>Włącz/Wyłącz</th>
+            </tr>
+            {% for r in rules %}
+            <tr>
+                <td>{{ r.id }}</td>
+                <td>{{ r.category }}</td>
+                <td>{{ r.applies_to }}</td>
+                <td>{{ r.action }}</td>
+                <td>{{ r.score_delta }}</td>
+                <td>{{ "Aktywna" if r.enabled else "Wyłączona" }}</td>
+                <td>
+                    <form action="/rules/toggle" method="post" style="display:inline;">
+                        <input type="hidden" name="rule_id" value="{{ r.id }}">
+                        <input type="hidden" name="enabled" value="{{ 0 if r.enabled else 1 }}">
+                        <button type="submit">{{ "Wyłącz" if r.enabled else "Włącz" }}</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>

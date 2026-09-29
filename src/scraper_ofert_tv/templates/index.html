@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Scraper Ofert TV - Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Scraper Ofert TV - Panel Sterowania</h1>
+        <div style="margin-bottom: 20px;">
+            <a href="/settings" style="margin-right: 15px; font-weight: bold;">Ustawienia (Filtry, Progi, Harmonogram, Profile)</a>
+            <a href="/rules" style="font-weight: bold;">Reguły Opisowe</a>
+        </div>
+        
+        <div class="actions">
+            <form action="/action/scan" method="post" style="display:inline;">
+                <input type="hidden" name="mode" value="national">
+                <button type="submit">Uruchom Skan Ogólnopolski</button>
+            </form>
+            <form action="/action/scan" method="post" style="display:inline;">
+                <input type="hidden" name="mode" value="lodz_alerts">
+                <button type="submit">Uruchom Skan Łódź</button>
+            </form>
+            <form action="/action/recalc" method="post" style="display:inline;">
+                <button type="submit">Przelicz Rynek & Scoring</button>
+            </form>
+            <form action="/action/export" method="post" style="display:inline;">
+                <button type="submit">Eksportuj Excel</button>
+            </form>
+        </div>
+        
+        <div class="dashboard">
+            <div class="alerts">
+                <h2>Ostatnie Alerty (Łódź)</h2>
+                <table>
+                    <tr>
+                        <th>Tytuł</th>
+                        <th>Cena</th>
+                        <th>Zysk (Szac)</th>
+                        <th>Score</th>
+                        <th>Status</th>
+                        <th>Akcje</th>
+                    </tr>
+                    {% for alert in alerts %}
+                    <tr>
+                        <td><a href="{{ alert.url }}" target="_blank">{{ alert.title }}</a></td>
+                        <td>{{ alert.price_pln }} zł</td>
+                        <td>{{ alert.estimated_profit_pln }} zł</td>
+                        <td>{{ alert.score }}</td>
+                        <td>{{ alert.status }}</td>
+                        <td>
+                            <form action="/action/decision" method="post" style="display:inline;">
+                                <input type="hidden" name="alert_id" value="{{ alert.id }}">
+                                <input type="hidden" name="decision" value="approved">
+                                <button type="submit">OK</button>
+                            </form>
+                            <form action="/action/decision" method="post" style="display:inline;">
+                                <input type="hidden" name="alert_id" value="{{ alert.id }}">
+                                <input type="hidden" name="decision" value="rejected">
+                                <button type="submit">Odrzuć</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            
+            <div class="scans">
+                <h2>Historia Skanów</h2>
+                <table>
+                    <tr>
+                        <th>ID</th>
+                        <th>Tryb</th>
+                        <th>Status</th>
+                        <th>Nowe Oferty</th>
+                        <th>Start</th>
+                    </tr>
+                    {% for scan in scans %}
+                    <tr>
+                        <td>{{ scan.id }}</td>
+                        <td>{{ scan.mode }}</td>
+                        <td>{{ scan.status }}</td>
+                        <td>{{ scan.offers_new }}</td>
+                        <td>{{ scan.started_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Ustawienia - Scraper Ofert TV</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Ustawienia <a href="/" style="font-size: 14px;">(Powrót do panelu)</a></h1>
+        
+        <h2>Ustawienia Główne & Harmonogram</h2>
+        <form action="/settings/save" method="post">
+            <h3>Filtry Globalne OLX</h3>
+            <label>Cena od: <input type="number" name="price_min" value="{{ global_filters.get('price_min', 300) }}"></label><br><br>
+            <label>Cena do: <input type="number" name="price_max" value="{{ global_filters.get('price_max', 700) }}"></label><br><br>
+            <label>Typ sprzedawcy: <input type="text" name="seller_type" value="{{ global_filters.get('seller_type', 'private') }}"></label><br><br>
+            <label>Stan: <input type="text" name="condition" value="{{ global_filters.get('condition', 'used') }}"></label><br><br>
+
+            <h3>Scoring & Alerty</h3>
+            <label>Minimalny rabat (%): <input type="number" step="0.1" name="min_discount" value="{{ scoring.get('min_discount', 15.0) }}"></label><br><br>
+            <label>Minimalny zysk (PLN): <input type="number" name="min_profit" value="{{ scoring.get('min_profit', 100) }}"></label><br><br>
+            <label>Min. ofert do referencji: <input type="number" name="min_count" value="{{ scoring.get('min_count', 3) }}"></label><br><br>
+            <label>Minimalny Score: <input type="number" step="0.1" name="min_score" value="{{ scoring.get('min_score', 30.0) }}"></label><br><br>
+            <label>Minimalne Confidence (0.0 - 1.0): <input type="number" step="0.01" name="min_confidence" value="{{ scoring.get('min_confidence', 0.7) }}"></label><br><br>
+            <label>Estymowane Koszty (PLN): <input type="number" name="estimated_costs" value="{{ scoring.get('estimated_costs', 50) }}"></label><br><br>
+            <label>Wyciszenie powtórzonych alertów (godziny): <input type="number" name="suppress_hours" value="{{ scoring.get('suppress_hours', 24) }}"></label><br><br>
+
+            <h3>Harmonogram (w godzinach)</h3>
+            <label>Skan Ogólnopolski (National): <input type="number" name="national_hours" value="{{ scheduler.get('national_hours', 12) }}"></label><br><br>
+            <label>Skan Łódź (Alerty): <input type="number" name="lodz_hours" value="{{ scheduler.get('lodz_hours', 2) }}"></label><br><br>
+            <label>Automatyczny Eksport: <input type="number" name="export_hours" value="{{ scheduler.get('export_hours', 2) }}"></label><br><br>
+
+            <button type="submit">Zapisz Ustawienia</button>
+        </form>
+
+        <hr>
+
+        <h2>Profile Rozmiarów</h2>
+        <table>
+            <tr>
+                <th>Rozmiar</th>
+                <th>Filtr OLX</th>
+                <th>Status</th>
+                <th>Akcja</th>
+            </tr>
+            {% for profile in size_profiles %}
+            <tr>
+                <td>{{ profile.label }}</td>
+                <td>{{ profile.olx_size_value }}</td>
+                <td>{{ "Aktywny" if profile.enabled else "Wyłączony" }}</td>
+                <td>
+                    <form action="/settings/profile/toggle" method="post" style="display:inline;">
+                        <input type="hidden" name="profile_id" value="{{ profile.id }}">
+                        <input type="hidden" name="enabled" value="{{ 0 if profile.enabled else 1 }}">
+                        <button type="submit">{{ "Wyłącz" if profile.enabled else "Włącz" }}</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>
