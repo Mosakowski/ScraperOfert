@@ -49,6 +49,9 @@ class SettingsService:
 
     def get_rate_limit_settings(self):
         return self.get_setting("rate_limit", {"requests_per_minute": 30, "delay_between_requests": 2})
+
+    def get_scraper_settings(self):
+        return self.get_setting("scraper_settings", {"fetch_backend": "httpx"})
         
     def get_scoring_settings(self):
         return self.get_setting("scoring_settings", {})
@@ -69,6 +72,7 @@ class SettingsService:
                 "lodz_alerts": self.get_lodz_alerts_settings()
             },
             "rate_limit": self.get_rate_limit_settings(),
+            "scraper_settings": self.get_scraper_settings(),
             "scoring_settings": self.get_scoring_settings(),
             "size_profiles": self.get_size_profiles()
         }
@@ -88,6 +92,8 @@ class SettingsService:
                 self.set_setting("lodz_alerts", data["modes"]["lodz_alerts"])
         if "rate_limit" in data:
             self.set_setting("rate_limit", data["rate_limit"])
+        if "scraper_settings" in data:
+            self.set_setting("scraper_settings", data["scraper_settings"])
         if "scoring_settings" in data:
             self.set_setting("scoring_settings", data["scoring_settings"])
             

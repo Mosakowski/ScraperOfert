@@ -14,6 +14,8 @@ from scraper_ofert_tv.rate_limiter import RateLimiter
 from scraper_ofert_tv.listing_scraper import ListingScraper
 from scraper_ofert_tv.listing_parser import parse_listing
 from scraper_ofert_tv.details_queue import add_to_queue
+import os
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,12 @@ class Scanner:
             requests_per_minute=self.settings.get_rate_limit_settings().get("requests_per_minute", 30),
             delay_listings=self.settings.get_rate_limit_settings().get("delay_between_requests", 2)
         )
-        self.scraper = ListingScraper(self.rate_limiter)
+        scraper_settings = self.settings.get_scraper_settings()
+        if scraper_settings.get("fetch_backend") == "playwright":
+            from scraper_ofert_tv.browser_scraper import BrowserScraper
+            self.scraper = BrowserScraper(self.rate_limiter)
+        else:
+            self.scraper = ListingScraper(self.rate_limiter)
         
     def run_scan(self, mode: str, specific_profile: str = None):
         conn = get_connection()
@@ -50,12 +57,14 @@ class Scanner:
         
         total_new_offers = 0
         total_known_offers = 0
+        total_seen_offers = 0
+        profile_results = []
         
         for profile in profiles:
             if not profile.get("enabled"):
                 continue
                 
-            profile_new, profile_known = self._scan_profile(
+            profile_result = self._scan_profile(
                 conn=conn,
                 run_id=run_id,
                 mode=mode,
@@ -66,19 +75,44 @@ class Scanner:
                 max_pages=max_pages
             )
             
-            total_new_offers += profile_new
-            total_known_offers += profile_known
+            profile_results.append(profile_result)
+            total_new_offers += profile_result["offers_new"]
+            total_known_offers += profile_result["offers_known"]
+            total_seen_offers += profile_result["offers_seen"]
             
             if self.rate_limiter.is_run_limit_reached():
                 logger.info("Osiagnieto globalny limit zapytan. Przerywam.")
                 break
+
+        if self.rate_limiter.is_run_limit_reached():
+            run_status = "partial"
+            run_stop_reason = "run_limit_reached"
+        elif profile_results and all(r["status"] in ("failed", "temporarily_blocked") for r in profile_results):
+            run_status = "failed"
+            reasons = sorted({r["stop_reason"] for r in profile_results if r["stop_reason"]})
+            run_stop_reason = ";".join(reasons) if reasons else "all_profiles_failed"
+        elif any(r["status"] in ("failed", "temporarily_blocked") for r in profile_results):
+            run_status = "partial"
+            reasons = sorted({r["stop_reason"] for r in profile_results if r["status"] in ("failed", "temporarily_blocked") and r["stop_reason"]})
+            run_stop_reason = ";".join(reasons) if reasons else "some_profiles_failed"
+        elif not profile_results:
+            run_status = "skipped"
+            run_stop_reason = "no_enabled_profiles"
+        else:
+            run_status = "success"
+            reasons = sorted({r["stop_reason"] for r in profile_results if r["stop_reason"]})
+            run_stop_reason = ";".join(reasons) if reasons else None
                 
         update_search_run(
             conn, 
             run_id, 
-            "success" if not self.rate_limiter.is_run_limit_reached() else "partial",
+            run_status,
+            profiles_total=len([p for p in profiles if p.get("enabled")]),
+            profiles_done=len(profile_results),
+            offers_seen=total_seen_offers,
             offers_new=total_new_offers,
-            offers_known=total_known_offers
+            offers_known=total_known_offers,
+            stop_reason=run_stop_reason
         )
         conn.close()
         self.scraper.close()
@@ -102,19 +136,40 @@ class Scanner:
         page_num = 1
         new_offers_count = 0
         known_offers_count = 0
+        seen_offers_count = 0
         
         # Ochrona przed nieskonczona petla
         seen_urls_this_run = set()
         
         stop_reason = None
         status = "success"
+        all_warnings = []
         
         while page_num <= max_pages:
-            html, error = self.scraper.fetch_listing(current_url)
+            html, error, diag_info = self.scraper.fetch_listing(current_url)
             
             if error:
-                if error == "captcha_detected" or error == "rate_limited":
-                    stop_reason = "blocked"
+                if diag_info:
+                    os.makedirs("debug/listings", exist_ok=True)
+                    base_filename = f"debug/listings/error_{run_id}_{profile['id']}_{page_num}"
+                    
+                    # Save HTML
+                    with open(f"{base_filename}.html", "w", encoding="utf-8") as f:
+                        f.write(diag_info.get("body", ""))
+                        
+                    # Save JSON metadata
+                    json_data = {
+                        "url": diag_info.get("url"),
+                        "status_code": diag_info.get("status_code"),
+                        "request_headers": diag_info.get("request_headers"),
+                        "response_headers": diag_info.get("response_headers"),
+                        "error_reason": error
+                    }
+                    with open(f"{base_filename}.json", "w", encoding="utf-8") as f:
+                        json.dump(json_data, f, indent=2)
+
+                if error in ("captcha_detected", "rate_limited", "forbidden_403"):
+                    stop_reason = "blocked_403" if error == "forbidden_403" else "blocked"
                     status = "temporarily_blocked"
                 elif error == "not_found":
                     stop_reason = "no_more_pages"
@@ -126,10 +181,30 @@ class Scanner:
             if not html:
                 break
                 
-            offers, next_url = parse_listing(html, base_url="https://www.olx.pl")
+            offers, next_url, warnings = parse_listing(html, base_url="https://www.olx.pl")
+            if warnings:
+                all_warnings.extend(warnings)
+            seen_offers_count += len(offers)
             
             if not offers:
-                stop_reason = "no_offers_on_page"
+                if seen_offers_count > 0:
+                    stop_reason = "no_more_offers_on_next_page"
+                else:
+                    stop_reason = "no_offers_on_page"
+                # Diagnostic mode
+                os.makedirs("debug/listings", exist_ok=True)
+                diag_filename = f"debug/listings/run_{profile_run_id}_page_{page_num}.html"
+                with open(diag_filename, "w", encoding="utf-8") as f:
+                    f.write(html)
+                diag_info = {
+                    "url": current_url,
+                    "profile_id": profile["id"],
+                    "mode": mode,
+                    "page": page_num,
+                    "warnings": warnings
+                }
+                with open(diag_filename.replace(".html", ".json"), "w", encoding="utf-8") as f:
+                    json.dump(diag_info, f, indent=2)
                 break
                 
             # Sprawdzenie czy utknelismy na tej samej stronie
@@ -158,7 +233,8 @@ class Scanner:
                     page_new += 1
                     new_offers_count += 1
                     # Dodaj do kolejki detali (nowa oferta)
-                    add_to_queue(conn, offer_id, "new_offer", 100)
+                    priority = 300 if mode == "lodz_alerts" else 100
+                    add_to_queue(conn, offer_id, "new_offer", priority)
                 else:
                     known_offers_count += 1
                     # Jesli zmienila sie cena, tu mozna dodac check i wrzucic na detale z "price_changed"
@@ -207,11 +283,24 @@ class Scanner:
         if not stop_reason:
             stop_reason = "max_pages_reached"
             
+        warnings_json = json.dumps(all_warnings) if all_warnings else None
+            
         conn.execute(
             """UPDATE search_profile_runs 
-               SET status = ?, pages_fetched = ?, offers_new = ?, offers_known = ?, finished_at = ?, stop_reason = ? 
+               SET status = ?, pages_fetched = ?, offers_new = ?, offers_known = ?, finished_at = ?, stop_reason = ?, parser_warnings_json = ?
                WHERE id = ?""",
-            (status, min(page_num, max_pages), new_offers_count, known_offers_count, now_iso(), stop_reason, profile_run_id)
+            (status, min(page_num, max_pages), new_offers_count, known_offers_count, now_iso(), stop_reason, warnings_json, profile_run_id)
         )
         conn.commit()
-        return new_offers_count, known_offers_count
+        conn.execute(
+            "UPDATE search_profile_runs SET offers_seen = ? WHERE id = ?",
+            (seen_offers_count, profile_run_id)
+        )
+        conn.commit()
+        return {
+            "status": status,
+            "stop_reason": stop_reason,
+            "offers_seen": seen_offers_count,
+            "offers_new": new_offers_count,
+            "offers_known": known_offers_count,
+        }

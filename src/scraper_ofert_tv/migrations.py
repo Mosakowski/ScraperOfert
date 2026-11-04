@@ -81,4 +81,33 @@ def apply_migrations(db_path: Path = None):
         
         conn.commit()
 
+    # Migration 2: model_specs
+    cursor.execute("SELECT 1 FROM schema_migrations WHERE version=2")
+    if not cursor.fetchone():
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS model_specs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              brand TEXT NOT NULL,
+              model TEXT NOT NULL,
+              normalized_model TEXT NOT NULL,
+              screen_size_inches INTEGER,
+              technology TEXT,
+              resolution TEXT,
+              year INTEGER,
+              series TEXT,
+              source_url TEXT,
+              source_name TEXT,
+              spec_confidence REAL,
+              notes TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(brand, normalized_model)
+            )
+        """)
+        cursor.execute(
+            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+            (2, "add_model_specs", now_iso())
+        )
+        conn.commit()
+        
     conn.close()

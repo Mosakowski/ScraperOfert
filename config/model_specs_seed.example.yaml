@@ -1,0 +1,11 @@
+- brand: sony
+  model: 46HX850
+  screen_size_inches: 46
+  technology: led
+  resolution: full_hd
+  year: 2012
+  series: HX850
+  source_url: "https://www.sony.pl/electronics/support/televisions-projectors-lcd-tvs/kdl-46hx850/specifications"
+  source_name: "Sony support/manual"
+  spec_confidence: 0.9
+  notes: "Manual/spec source confirmed."

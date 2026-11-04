@@ -15,15 +15,11 @@ def score_offers(conn: sqlite3.Connection):
     # Uproszczenie MVP: iteruj po ofertach bez przypisanego score dzisiaj.
     
     cursor.execute("""
-        SELECT o.*, 
-               m.id as market_id, m.median_price_pln, m.offers_count, m.confidence as market_confidence
+        SELECT o.* 
         FROM offers o
-        LEFT JOIN market_price_references m ON o.comparable_key = m.comparable_key
         WHERE o.system_status IN ('new', 'weak_match')
           AND o.gone_at IS NULL
           AND o.price_pln > 0
-          AND o.comparable_key IS NOT NULL
-          AND o.comparable_key != ''
     """)
     offers = cursor.fetchall()
     
@@ -31,30 +27,63 @@ def score_offers(conn: sqlite3.Connection):
     for offer in offers:
         offer_id = offer['id']
         price = offer['price_pln']
-        median_price = offer['median_price_pln']
-        market_id = offer['market_id']
         sys_status = offer['system_status']
-        confidence = float(offer['comparison_confidence'] or 0.0)
-        offers_count = offer['offers_count'] or 0
         
+        from scraper_ofert_tv.comparison import generate_comparable_keys, get_strategy_cap, calculate_normalization_confidence
+        normalized = {
+            'brand': offer['brand'],
+            'model_name': offer['model'],
+            'technology': offer['technology'],
+            'resolution': offer['resolution'],
+            'size_inches': offer['detected_size_inches'],
+            'native_olx_bucket': offer['olx_size_bucket']
+        }
+        keys = generate_comparable_keys(normalized)
+        
+        cursor.execute("SELECT value_json FROM settings WHERE key = 'scoring_settings'")
+        setting_row = cursor.fetchone()
+        scoring_settings = json.loads(setting_row['value_json']) if setting_row else {}
+        min_count = int(scoring_settings.get("min_count", 3))
+        
+        best_market = None
+        best_strategy = None
+        
+        for strategy in ['A', 'B', 'C', 'D']:
+            key = keys.get(strategy)
+            if not key: continue
+            cursor.execute("SELECT id as market_id, median_price_pln, offers_count, confidence as market_confidence FROM market_price_references WHERE comparable_key = ?", (key,))
+            market = cursor.fetchone()
+            # Dla strategii A (exact model) również wymagamy min_count
+            required_count = min_count
+            
+            if market and market['offers_count'] >= required_count:
+                best_market = market
+                best_strategy = strategy
+                break
+                
         # 1. Sprawdz reguly odrzucajace
         cursor.execute("SELECT * FROM rule_matches WHERE offer_id = ? AND action = 'reject'", (offer_id,))
         rejects = cursor.fetchall()
         if rejects:
-            _save_score(conn, offer_id, market_id, 0, "rejected", median_price, now, reasons=["rule_reject"])
+            _save_score(conn, offer_id, best_market['market_id'] if best_market else None, 0, "rejected", 
+                        best_market['median_price_pln'] if best_market else None, now, reasons=["rule_reject"])
             continue
             
-        cursor.execute("SELECT value_json FROM settings WHERE key = 'scoring_settings'")
-        setting_row = cursor.fetchone()
-        scoring_settings = json.loads(setting_row['value_json']) if setting_row else {}
-        
-        min_count = int(scoring_settings.get("min_count", 3))
-        
-        if not median_price or offers_count < min_count:
+        if not best_market:
             # Nie mamy rynku albo zbyt mala proba
-            _save_score(conn, offer_id, market_id, 0, sys_status, median_price, now, reasons=["no_market"])
+            _save_score(conn, offer_id, None, 0, sys_status, None, now, reasons=["no_market"])
             continue
             
+        median_price = best_market['median_price_pln']
+        offers_count = best_market['offers_count']
+        market_id = best_market['market_id']
+        market_sample_confidence = float(best_market['market_confidence']) if best_market else 0.0
+        
+        strategy_cap = get_strategy_cap(best_strategy) if best_strategy else 0.4
+        norm_conf = calculate_normalization_confidence(normalized)
+        
+        final_comparison_confidence = min(market_sample_confidence, strategy_cap, norm_conf)
+        
         # 2. Obliczanie znizek/profitu
         market_discount_percent = ((median_price - price) / median_price) * 100.0 if median_price > 0 else 0
         expected_resale = median_price
@@ -70,7 +99,7 @@ def score_offers(conn: sqlite3.Connection):
         
         # 4. Modifikatory
         # Za confidence - jesli ponizej 0.5 to duzy spadek
-        score = score * (confidence + 0.2)
+        score = score * (final_comparison_confidence + 0.2)
         
         # Reguly modyfikujace (np flagi z negatywnym delta)
         cursor.execute("SELECT score_delta FROM rule_matches WHERE offer_id = ? AND action = 'flag'", (offer_id,))
@@ -95,11 +124,21 @@ def score_offers(conn: sqlite3.Connection):
             else:
                 final_status = 'active'
                 
-        reasons = [f"discount={market_discount_percent:.1f}%", f"profit={estimated_profit}"]
+        reasons = [
+            f"discount={market_discount_percent:.1f}%", 
+            f"profit={estimated_profit}", 
+            f"strategy={best_strategy}",
+            f"strategy_cap={strategy_cap}",
+            f"norm_conf={norm_conf}",
+            f"market_conf={market_sample_confidence}"
+        ]
+        
+        # Zaktualizuj klucz comparable_key w offers by odzwierciedlał wybrany rynek
+        conn.execute("UPDATE offers SET comparable_key = ? WHERE id = ?", (keys.get(best_strategy), offer_id))
         
         _save_score(conn, offer_id, market_id, score, final_status, median_price, now, reasons,
                    expected_resale, estimated_costs, estimated_profit, market_discount_percent,
-                   offers_count, str(confidence))
+                   offers_count, str(final_comparison_confidence))
                    
     conn.commit()
 

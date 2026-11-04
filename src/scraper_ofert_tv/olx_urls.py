@@ -1,7 +1,7 @@
 import urllib.parse
 
 BASE_URL = "https://www.olx.pl"
-CATEGORY_PATH = "/elektronika/telewizory/"
+CATEGORY_PATH = "/elektronika/tv/telewizory/"
 
 def build_olx_search_url(
     mode: str = "national",
@@ -21,7 +21,7 @@ def build_olx_search_url(
     # Budowa sciezki glownej
     path = CATEGORY_PATH
     if mode == "lodz_alerts" and location:
-        path = f"/elektronika/telewizory/{location}/"
+        path = f"/elektronika/tv/telewizory/{location}/"
 
     url = f"{BASE_URL}{path}"
     

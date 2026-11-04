@@ -8,15 +8,31 @@ from scraper_ofert_tv.comparison import generate_comparable_key, calculate_confi
 from scraper_ofert_tv.rules import evaluate_rules
 import json
 
+from scraper_ofert_tv.settings_service import SettingsService
+import os
+
 logger = logging.getLogger(__name__)
 
 class DetailWorker:
     def __init__(self):
-        self.scraper = DetailScraper()
+        settings = SettingsService()
+        scraper_settings = settings.get_scraper_settings()
         
-    def work(self, limit: int = 10):
+        if scraper_settings.get("fetch_backend") == "playwright":
+            from scraper_ofert_tv.browser_scraper import BrowserScraper
+            self.scraper = BrowserScraper()
+        else:
+            self.scraper = DetailScraper()
+        
+    def work(self, limit: int = 10, mode: str = None):
         conn = get_connection()
-        tasks = get_pending_tasks(conn, limit)
+        tasks = get_pending_tasks(conn, limit, mode)
+        
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM model_specs")
+        specs_cache = {}
+        for r in cursor.fetchall():
+            specs_cache[(r['brand'].lower(), r['normalized_model'])] = dict(r)
         
         for task in tasks:
             if self.scraper.rate_limiter.is_details_limit_reached():
@@ -40,16 +56,30 @@ class DetailWorker:
             url = offer['url']
             
             # 2. Pobieramy HTML
-            html, err = self.scraper.fetch_detail(url)
+            html, err, diag_info = self.scraper.fetch_detail(url)
             
             if err:
+                if diag_info:
+                    os.makedirs("debug/details", exist_ok=True)
+                    base_filename = f"debug/details/error_{offer_id}"
+                    
+                    with open(f"{base_filename}.html", "w", encoding="utf-8") as f:
+                        f.write(diag_info.get("body", ""))
+                        
+                    with open(f"{base_filename}.json", "w", encoding="utf-8") as f:
+                        json.dump({
+                            "url": diag_info.get("url"),
+                            "status_code": diag_info.get("status_code"),
+                            "error_reason": err
+                        }, f, indent=2)
+
                 if err == "not_found" or err == "gone":
                     # Ogloszenie juz usuniete. 
                     # Zapisujemy to, i oznaczamy task jako done, bo to stan koncowy
                     conn.execute("UPDATE offers SET gone_at = ?, updated_at = ? WHERE id = ?", (now_iso(), now_iso(), offer_id))
                     conn.commit()
                     mark_task_done(conn, task_id)
-                elif err in ["captcha_detected", "rate_limited"]:
+                elif err in ["captcha_detected", "rate_limited", "forbidden_403"]:
                     # Powinnismy sprobowac jeszcze raz, z wiekszym opoznieniem (TODO: backoff details)
                     mark_task_failed(conn, task_id, err)
                     break # Wstrzymujemy procesowanie bo dostalismy bana
@@ -69,7 +99,7 @@ class DetailWorker:
                 conn.execute("UPDATE offers SET gone_at = ?, updated_at = ? WHERE id = ?", (now_iso(), now_iso(), offer_id))
             
             # 4. Normalizujemy dane
-            normalized = normalize_offer_data(dict(offer), detail)
+            normalized = normalize_offer_data(dict(offer), detail, specs_cache)
             
             # 5. Tworzymy klucz i confidence
             comp_key = generate_comparable_key(normalized)
@@ -91,6 +121,7 @@ class DetailWorker:
                 SET seller_name = ?, seller_profile_url = ?,
                     brand = ?, model = ?, technology = ?, resolution = ?, detected_size_inches = ?,
                     city = ?, district = ?, comparable_key = ?, comparison_confidence = ?, 
+                    normalization_diagnostics_json = ?,
                     system_status = COALESCE(?, system_status), updated_at = ?, last_detail_fetch_at = ?
                 WHERE id = ?
             """, (
@@ -98,7 +129,8 @@ class DetailWorker:
                 normalized.get('brand'), normalized.get('model_name'), normalized.get('technology'), 
                 normalized.get('resolution'), normalized.get('size_inches'),
                 normalized.get('city'), normalized.get('district'),
-                comp_key, str(confidence), system_status, now, now, offer_id
+                comp_key, str(confidence), json.dumps(normalized.get('diagnostics', {})),
+                system_status, now, now, offer_id
             ))
             
             # Create snapshot for descriptive info

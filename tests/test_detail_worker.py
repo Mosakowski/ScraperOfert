@@ -48,7 +48,7 @@ def test_detail_worker_schema_match(monkeypatch):
         def __init__(self):
             self.rate_limiter = self.RateLimiter()
         def fetch_detail(self, url):
-            return "<html><head><title>Test TV</title></head><body><h1>TV Samsung 55 cali 4k Oled</h1><div class='css-bgzo2k'>700 zł</div></body></html>", None
+            return "<html><head><title>Test TV</title></head><body><h1>TV Samsung 55 cali 4k Oled</h1><div class='css-bgzo2k'>700 zł</div></body></html>", None, {}
         def close(self):
             pass
             

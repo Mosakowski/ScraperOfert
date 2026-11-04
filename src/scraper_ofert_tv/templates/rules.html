@@ -2,68 +2,112 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Reguły Opisowe - Scraper Ofert TV</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Reguły opisowe - Scraper Ofert TV</title>
+    <link rel="stylesheet" href="/static/style.css?v=20261102-final">
 </head>
 <body>
-    <div class="container">
-        <h1>Reguły Opisowe <a href="/" style="font-size: 14px;">(Powrót do panelu)</a></h1>
-        
-        <h2>Testowanie Reguł</h2>
-        <form action="/rules/test" method="post">
-            <textarea name="text" rows="4" style="width:100%;" placeholder="Wklej tekst tytułu/opisu..."></textarea><br><br>
-            <button type="submit">Testuj Reguły</button>
-        </form>
-        {% if request.query_params.test_result %}
-        <div style="margin-top: 10px; background: #eef; padding: 10px;">
-            <strong>Dopasowane reguły:</strong> {{ request.query_params.test_result }}
-        </div>
-        {% endif %}
-
-        <hr>
-
-        <h2>Dodaj Nową Regułę</h2>
-        <form action="/rules/add" method="post">
-            <label>ID Reguły (bez spacji): <input type="text" name="rule_id" required></label><br><br>
-            <label>Kategoria (np. red_flag, warning, positive, info): <input type="text" name="category" required></label><br><br>
-            <label>Aplikuj do (np. title, description, combined): <input type="text" name="applies_to" value="description"></label><br><br>
-            <label>Frazy (oddzielone przecinkiem): <input type="text" name="patterns" style="width:400px;" required></label><br><br>
-            <label>Akcja (np. flag, reject, boost): <input type="text" name="action" value="flag"></label><br><br>
-            <label>Delta Punktowa: <input type="number" name="score_delta" value="-10"></label><br><br>
-            <button type="submit">Dodaj</button>
-        </form>
-
-        <hr>
-
-        <h2>Lista Zdefiniowanych Reguł</h2>
-        <table>
-            <tr>
-                <th>ID</th>
-                <th>Kategoria</th>
-                <th>Aplikuj do</th>
-                <th>Akcja</th>
-                <th>Delta</th>
-                <th>Status</th>
-                <th>Włącz/Wyłącz</th>
-            </tr>
-            {% for r in rules %}
-            <tr>
-                <td>{{ r.id }}</td>
-                <td>{{ r.category }}</td>
-                <td>{{ r.applies_to }}</td>
-                <td>{{ r.action }}</td>
-                <td>{{ r.score_delta }}</td>
-                <td>{{ "Aktywna" if r.enabled else "Wyłączona" }}</td>
-                <td>
-                    <form action="/rules/toggle" method="post" style="display:inline;">
-                        <input type="hidden" name="rule_id" value="{{ r.id }}">
-                        <input type="hidden" name="enabled" value="{{ 0 if r.enabled else 1 }}">
-                        <button type="submit">{{ "Wyłącz" if r.enabled else "Włącz" }}</button>
+    <div class="app-shell">
+        {% include "nav.html" %}
+        <main class="main-content">
+            {% include "page_header.html" %}
+            <div class="page-body rules-page">
+                <div class="rules-workbench">
+                <section class="content-section rule-tool-section">
+                    <div class="section-heading">
+                        <div><span class="section-kicker">TESTER REGUŁ</span><h2>Sprawdź opis</h2><p>Przetestuj aktywne reguły na tekście oferty</p></div>
+                        <span class="section-icon" aria-hidden="true"><svg class="icon"><use href="#i-search"/></svg></span>
+                    </div>
+                    <form class="stacked-form" action="/rules/test" method="post">
+                        <label for="rule-test-text">Tytuł i opis</label>
+                        <textarea id="rule-test-text" name="text" rows="4" placeholder="Wklej tekst do sprawdzenia..."></textarea>
+                        <div><button class="button-secondary" type="submit">Testuj reguły</button></div>
                     </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
+                    {% if request.query_params.test_result %}
+                    <div class="test-result"><strong>Dopasowane reguły</strong><pre>{{ request.query_params.test_result }}</pre></div>
+                    {% endif %}
+                </section>
+
+                <section class="content-section rule-create-section">
+                    <div class="section-heading">
+                        <div><span class="section-kicker">NOWA REGUŁA</span><h2>Dodaj regułę</h2><p>Nowa reguła zaczyna działać po zapisaniu</p></div>
+                        <span class="section-icon" aria-hidden="true"><svg class="icon"><use href="#i-plus"/></svg></span>
+                    </div>
+                    <form class="rule-create-form" action="/rules/add" method="post">
+                        <div class="field-grid field-grid-three">
+                            <label>ID reguły
+                                <input type="text" name="rule_id" placeholder="np. broken_panel" required>
+                            </label>
+                            <label>Kategoria
+                                <select name="category" required>
+                                    <option value="red_flag">Czerwona flaga</option>
+                                    <option value="warning">Ostrzeżenie</option>
+                                    <option value="positive">Pozytywna</option>
+                                    <option value="info">Informacyjna</option>
+                                </select>
+                            </label>
+                            <label>Pole tekstowe
+                                <select name="applies_to">
+                                    <option value="description">Opis</option>
+                                    <option value="title">Tytuł</option>
+                                    <option value="combined_text">Tytuł i opis</option>
+                                </select>
+                            </label>
+                            <label class="field-span-two">Frazy · oddziel przecinkiem
+                                <input type="text" name="patterns" placeholder="np. zbita matryca, pasy na ekranie" required>
+                            </label>
+                            <label>Akcja
+                                <select name="action">
+                                    <option value="flag">Oznacz</option>
+                                    <option value="reject">Odrzuć</option>
+                                    <option value="boost">Podbij ocenę</option>
+                                    <option value="info">Informacja</option>
+                                </select>
+                            </label>
+                            <label>Zmiana score
+                                <input type="number" name="score_delta" value="-10">
+                            </label>
+                        </div>
+                        <div class="form-footer"><button class="button-primary" type="submit">Dodaj regułę</button></div>
+                    </form>
+                </section>
+                </div>
+
+                <section class="content-section">
+                    <div class="section-heading">
+                        <div><span class="section-kicker">BAZA LOGIKI</span><h2>Reguły opisowe</h2><p>{{ rules|length }} zapisanych reguł</p></div>
+                        <span class="section-icon"><svg class="icon"><use href="#i-rules"/></svg></span>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="data-table rules-table">
+                            <thead><tr><th>Reguła</th><th>Kategoria</th><th>Dotyczy</th><th>Dopasowanie</th><th>Akcja</th><th>Score</th><th>Status</th><th></th></tr></thead>
+                            <tbody>
+                                {% for rule in rules %}
+                                <tr>
+                                    <td class="primary-cell"><code>{{ rule.id }}</code></td>
+                                    <td><span class="rule-category rule-category-{{ rule.category|replace('_', '-') }}">{{ rule.category_label }}</span></td>
+                                    <td>{{ rule.applies_to_label }}</td>
+                                    <td class="patterns-cell" title="{{ rule.patterns_label }}">{{ rule.patterns_label }}</td>
+                                    <td>{{ rule.action_label }}</td>
+                                    <td>{{ rule.score_delta }}</td>
+                                    <td><span class="status-badge {{ 'status-active' if rule.enabled else 'status-neutral' }}">{{ 'Aktywna' if rule.enabled else 'Wyłączona' }}</span></td>
+                                    <td>
+                                        <form action="/rules/toggle" method="post">
+                                            <input type="hidden" name="rule_id" value="{{ rule.id }}">
+                                            <input type="hidden" name="enabled" value="{{ 0 if rule.enabled else 1 }}">
+                                            <button class="button-small {{ 'button-quiet' if rule.enabled else 'button-success' }}" type="submit">{{ 'Wyłącz' if rule.enabled else 'Włącz' }}</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td class="empty-cell" colspan="8">Brak zapisanych reguł.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
     </div>
 </body>
 </html>

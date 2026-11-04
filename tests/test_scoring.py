@@ -19,32 +19,32 @@ def db_with_scoring_data(tmp_path):
         INSERT INTO market_price_references (
             comparable_key, min_price_pln, avg_price_pln, median_price_pln,
             p25_price_pln, p75_price_pln, offers_count, calculated_at, confidence
-        ) VALUES ('lg_55_oled_4k', 2500, 3000, 3100, 2800, 3500, 5, ?, 'high')
+        ) VALUES ('lg_55_oled_4k', 2500, 3000, 3100, 2800, 3500, 5, ?, '0.8')
     """, (now,))
     
     # 2. Oferta dobra (okazja)
     conn.execute("""
         INSERT INTO offers (
-            id, url_hash, comparable_key, price_pln, system_status,
+            id, url_hash, brand, technology, resolution, detected_size_inches, price_pln, system_status,
             first_seen_at, last_seen_at, created_at, updated_at, url, source, comparison_confidence
-        ) VALUES (1, 'hash1', 'lg_55_oled_4k', 2000, 'new', ?, ?, ?, ?, 'http', 'olx', '1.0')
+        ) VALUES (1, 'hash1', 'lg', 'oled', '4k', 55, 2000, 'new', ?, ?, ?, ?, 'http', 'olx', '1.0')
     """, (now, now, now, now))
     
     # 3. Oferta z uszkodzeniem (reject)
     conn.execute("""
         INSERT INTO offers (
-            id, url_hash, comparable_key, price_pln, system_status,
+            id, url_hash, brand, technology, resolution, detected_size_inches, price_pln, system_status,
             first_seen_at, last_seen_at, created_at, updated_at, url, source, comparison_confidence
-        ) VALUES (2, 'hash2', 'lg_55_oled_4k', 500, 'new', ?, ?, ?, ?, 'http', 'olx', '1.0')
+        ) VALUES (2, 'hash2', 'lg', 'oled', '4k', 55, 500, 'new', ?, ?, ?, ?, 'http', 'olx', '1.0')
     """, (now, now, now, now))
     conn.execute("INSERT INTO rule_matches (offer_id, rule_id, category, severity, action, score_delta, matched_at) VALUES (2, 'broken', 'red_flag', 'high', 'reject', -100, ?)", (now,))
 
     # 4. Oferta weak match
     conn.execute("""
         INSERT INTO offers (
-            id, url_hash, comparable_key, price_pln, system_status,
+            id, url_hash, brand, technology, resolution, detected_size_inches, price_pln, system_status,
             first_seen_at, last_seen_at, created_at, updated_at, url, source, comparison_confidence
-        ) VALUES (3, 'hash3', 'lg_55_oled_4k', 1500, 'weak_match', ?, ?, ?, ?, 'http', 'olx', '0.2')
+        ) VALUES (3, 'hash3', 'lg', 'oled', '4k', 55, 1500, 'weak_match', ?, ?, ?, ?, 'http', 'olx', '0.2')
     """, (now, now, now, now))
     
     conn.commit()

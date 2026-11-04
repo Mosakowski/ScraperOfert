@@ -21,20 +21,29 @@ def add_to_queue(conn: sqlite3.Connection, offer_id: int, reason: str, priority:
     )
     conn.commit()
 
-def get_pending_tasks(conn: sqlite3.Connection, limit: int = 10) -> List[Dict[str, Any]]:
+def get_pending_tasks(conn: sqlite3.Connection, limit: int = 10, mode: str = None) -> List[Dict[str, Any]]:
     """Pobiera zadania z kolejki detali po priorytecie."""
     cursor = conn.cursor()
-    # Zakladamy, ze nizszy priority to wyzszy waznoscia albo odwrotnie? 
-    # Ustalmy ze wyzszy priorytet (100) jest pobierany najpierw (ORDER BY priority DESC).
-    # Omijamy te z available_after w przyszlosci
     now = now_iso()
-    cursor.execute(
-        """SELECT * FROM details_queue 
-           WHERE status = 'pending' AND (available_after IS NULL OR available_after <= ?)
-           ORDER BY priority DESC, created_at ASC 
-           LIMIT ?""",
-        (now, limit)
-    )
+    
+    query = """
+        SELECT dq.* 
+        FROM details_queue dq
+        JOIN offers o ON dq.offer_id = o.id
+        WHERE dq.status = 'pending' AND (dq.available_after IS NULL OR dq.available_after <= ?)
+        ORDER BY 
+            CASE WHEN ? = 'lodz_alerts' AND (
+                o.city LIKE '%lodz%' OR o.city LIKE '%łódź%' OR 
+                o.raw_location LIKE '%lodz%' OR o.raw_location LIKE '%łódź%' OR 
+                o.raw_location LIKE '%lodzkie%' OR o.raw_location LIKE '%łódzkie%' OR
+                EXISTS (SELECT 1 FROM offer_snapshots os WHERE os.offer_id = o.id AND os.scan_mode = 'lodz_alerts')
+            ) THEN 1 ELSE 0 END DESC,
+            dq.priority DESC, 
+            dq.created_at ASC 
+        LIMIT ?
+    """
+    
+    cursor.execute(query, (now, mode, limit))
     return [dict(row) for row in cursor.fetchall()]
 
 def mark_task_processing(conn: sqlite3.Connection, task_id: int):

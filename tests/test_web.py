@@ -34,7 +34,7 @@ client = TestClient(app)
 def test_index_page():
     response = client.get("/")
     assert response.status_code == 200
-    assert "Scraper Ofert TV - Panel Sterowania" in response.text
+    assert "Przegląd · Panel TV" in response.text
 
 def test_settings_page():
     response = client.get("/settings")
@@ -44,7 +44,7 @@ def test_settings_page():
 def test_rules_page():
     response = client.get("/rules")
     assert response.status_code == 200
-    assert "Reguły Opisowe" in response.text
+    assert "Reguły opisowe" in response.text
 
 def test_save_settings():
     # Smoke test zapisu ustawien

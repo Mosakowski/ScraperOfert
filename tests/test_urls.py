@@ -9,7 +9,7 @@ def test_national_url():
         size_filter="40-49"
     )
     url_decoded = urllib.parse.unquote(url)
-    assert "https://www.olx.pl/elektronika/telewizory/" in url_decoded
+    assert "https://www.olx.pl/elektronika/tv/telewizory/" in url_decoded
     assert "search[filter_float_price:from]=300" in url_decoded
     assert "search[filter_float_price:to]=700" in url_decoded
     assert "search[filter_enum_state][0]=used" in url_decoded
@@ -24,7 +24,7 @@ def test_lodz_alerts_url():
         size_filter="50-59"
     )
     url_decoded = urllib.parse.unquote(url)
-    assert "https://www.olx.pl/elektronika/telewizory/lodz/" in url_decoded
+    assert "https://www.olx.pl/elektronika/tv/telewizory/lodz/" in url_decoded
     assert "search[dist]=50" in url_decoded
     assert "search[filter_enum_size][0]=50-59" in url_decoded
 

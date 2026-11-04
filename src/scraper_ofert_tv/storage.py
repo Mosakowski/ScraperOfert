@@ -83,6 +83,18 @@ def upsert_offer(conn: sqlite3.Connection, offer_data: dict) -> int:
     
     now = now_iso()
     
+    # Whitelist dla tabeli offers
+    OFFERS_WHITELIST = {
+        'source', 'olx_offer_id', 'url', 'canonical_url', 'url_hash', 'title', 'raw_title', 
+        'price_pln', 'raw_price', 'negotiable', 'is_free', 'seller_type', 'seller_name', 
+        'seller_profile_url', 'condition_value', 'city', 'district', 'region', 'raw_location', 
+        'distance_from_lodz_km', 'olx_size_bucket', 'detected_size_inches', 'brand', 'model', 
+        'technology', 'resolution', 'comparable_key', 'comparison_confidence', 'system_status', 
+        'user_decision', 'user_note', 'contacted_at', 'purchased_at', 'ignored_until', 
+        'manual_priority', 'first_seen_at', 'last_seen_at', 'last_detail_fetch_at', 'gone_at', 
+        'created_at', 'updated_at'
+    }
+
     if row:
         # Aktualizacja
         offer_id = row['id']
@@ -102,8 +114,9 @@ def upsert_offer(conn: sqlite3.Connection, offer_data: dict) -> int:
         fields = ["created_at", "updated_at", "first_seen_at", "last_seen_at"]
         values = [now, now, now, now]
         for k, v in offer_data.items():
-            fields.append(k)
-            values.append(v)
+            if k in OFFERS_WHITELIST:
+                fields.append(k)
+                values.append(v)
             
         placeholders = ", ".join(["?"] * len(values))
         insert_query = f"INSERT INTO offers ({', '.join(fields)}) VALUES ({placeholders})"
@@ -117,8 +130,17 @@ def create_offer_snapshot(conn: sqlite3.Connection, snapshot_data: dict) -> int:
     """Zapisuje zrzut danych oferty."""
     snapshot_data['scraped_at'] = snapshot_data.get('scraped_at', now_iso())
     
-    fields = list(snapshot_data.keys())
-    values = list(snapshot_data.values())
+    SNAPSHOTS_WHITELIST = {
+        'offer_id', 'search_run_id', 'search_profile_run_id', 'scan_mode', 'size_profile_id',
+        'listing_page_url', 'listing_page_number', 'listing_position', 'title', 'price_pln',
+        'raw_price', 'negotiable', 'city', 'district', 'region', 'raw_location', 'description',
+        'params_json', 'photo_count', 'main_photo_url', 'listing_thumbnail_url',
+        'parser_warnings_json', 'scraped_at'
+    }
+
+    filtered_data = {k: v for k, v in snapshot_data.items() if k in SNAPSHOTS_WHITELIST}
+    fields = list(filtered_data.keys())
+    values = list(filtered_data.values())
     placeholders = ", ".join(["?"] * len(values))
     
     cursor = conn.cursor()

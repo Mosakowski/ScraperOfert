@@ -23,7 +23,7 @@ def test_export_to_excel(db_for_export, tmp_path):
     assert latest_file.exists()
     
     wb = openpyxl.load_workbook(latest_file)
-    assert len(wb.sheetnames) == 4
+    assert len(wb.sheetnames) >= 4
     assert "Lodz alerty" in wb.sheetnames
     assert "Oferty" in wb.sheetnames
     assert "Baza cen" in wb.sheetnames

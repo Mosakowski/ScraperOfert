@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS offers (
   resolution TEXT,
   comparable_key TEXT,
   comparison_confidence TEXT,
+  normalization_diagnostics_json TEXT,
   system_status TEXT NOT NULL DEFAULT 'new',
   user_decision TEXT NOT NULL DEFAULT 'none',
   user_note TEXT,
@@ -355,3 +356,23 @@ CREATE TABLE IF NOT EXISTS export_runs (
   finished_at TEXT,
   error_message TEXT
 );
+
+CREATE TABLE IF NOT EXISTS model_specs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  brand TEXT NOT NULL,
+  model TEXT NOT NULL,
+  normalized_model TEXT NOT NULL,
+  screen_size_inches INTEGER,
+  technology TEXT,
+  resolution TEXT,
+  year INTEGER,
+  series TEXT,
+  source_url TEXT,
+  source_name TEXT,
+  spec_confidence REAL,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(brand, normalized_model)
+);
+

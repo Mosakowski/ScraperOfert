@@ -57,9 +57,9 @@ def run_export_excel(args):
     print("Pomyślnie wyeksportowano do Excela w folderze output/")
 
 def run_process_details(args):
-    print(f"Przetwarzanie detali (limit: {args.limit})...")
+    print(f"Przetwarzanie detali (limit: {args.limit}, mode: {args.mode})...")
     worker = DetailWorker()
-    worker.work(limit=args.limit)
+    worker.work(limit=args.limit, mode=args.mode)
     print("Zakonczono przetwarzanie detali.")
 
 from scraper_ofert_tv.scoring import score_offers
@@ -116,7 +116,8 @@ def main():
 
     # process-details
     parser_details = subparsers.add_parser("process-details", help="Pobiera z kolejki detali i przetwarza je")
-    parser_details.add_argument("--limit", type=int, default=10, help="Limit cct detal do pobrania (default 10)")
+    parser_details.add_argument("--limit", type=int, default=10, help="Limit detali do pobrania (default 10)")
+    parser_details.add_argument("--mode", help="Opcjonalny tryb skanowania, np. lodz_alerts")
 
     # T208 recalc-market
     parser_recalc = subparsers.add_parser("recalc-market", help="Przelicza grupowanie i mediany referencyjne")
@@ -130,8 +131,23 @@ def main():
     parser_web.add_argument("--host", default="127.0.0.1", help="Host nasluchiwania")
     parser_web.add_argument("--port", type=int, default=8000, help="Port nasluchiwania")
 
+    # diagnose-olx
+    parser_diag = subparsers.add_parser("diagnose-olx", help="Uruchamia diagnostyke live-scrapingu OLX")
+    parser_diag.add_argument("--profile", required=True, help="Opcjonalny ID profilu rozmiaru, np. 40_49")
+    parser_diag.add_argument("--backend", choices=["httpx", "playwright"], default="httpx", help="Backend pobierania (httpx lub playwright)")
+
     # scheduler
     parser_scheduler = subparsers.add_parser("scheduler", help="Uruchamia proces w tle dla zadan cyklicznych")
+
+    # backfill
+    parser_backfill = subparsers.add_parser("backfill-normalization", help="Przelicza normalizacje dla istniejacych ofert")
+
+    # export-missing-specs
+    parser_exp_missing = subparsers.add_parser("export-missing-specs", help="Eksportuj brakujące specyfikacje modeli do CSV")
+
+    # import-model-specs
+    parser_imp_specs = subparsers.add_parser("import-model-specs", help="Importuj specyfikacje modeli z YAML")
+    parser_imp_specs.add_argument("file", help="Ścieżka do pliku YAML")
 
     args = parser.parse_args()
 
@@ -151,11 +167,24 @@ def main():
         run_recalc_market(args)
     elif args.command == "test-rules":
         run_test_rules(args)
+    elif args.command == "diagnose-olx":
+        from scraper_ofert_tv.diagnose_olx import diagnose_olx
+        diagnose_olx(args.profile, getattr(args, 'backend', 'httpx'))
+        
     elif args.command == "web":
         run_web(args)
     elif args.command == "scheduler":
         from scraper_ofert_tv.scheduler import start_scheduler
         start_scheduler()
+    elif args.command == "backfill-normalization":
+        from scraper_ofert_tv.backfill import run_backfill
+        run_backfill()
+    elif args.command == "export-missing-specs":
+        from scraper_ofert_tv.model_specs import export_missing_specs
+        export_missing_specs()
+    elif args.command == "import-model-specs":
+        from scraper_ofert_tv.model_specs import import_model_specs
+        import_model_specs(args.file)
     else:
         parser.print_help()
 

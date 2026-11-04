@@ -2,92 +2,122 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Scraper Ofert TV - Panel</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Przegląd · Panel TV</title>
+    <link rel="stylesheet" href="/static/style.css?v=20261102-final">
 </head>
 <body>
-    <div class="container">
-        <h1>Scraper Ofert TV - Panel Sterowania</h1>
-        <div style="margin-bottom: 20px;">
-            <a href="/settings" style="margin-right: 15px; font-weight: bold;">Ustawienia (Filtry, Progi, Harmonogram, Profile)</a>
-            <a href="/rules" style="font-weight: bold;">Reguły Opisowe</a>
-        </div>
-        
-        <div class="actions">
-            <form action="/action/scan" method="post" style="display:inline;">
-                <input type="hidden" name="mode" value="national">
-                <button type="submit">Uruchom Skan Ogólnopolski</button>
-            </form>
-            <form action="/action/scan" method="post" style="display:inline;">
-                <input type="hidden" name="mode" value="lodz_alerts">
-                <button type="submit">Uruchom Skan Łódź</button>
-            </form>
-            <form action="/action/recalc" method="post" style="display:inline;">
-                <button type="submit">Przelicz Rynek & Scoring</button>
-            </form>
-            <form action="/action/export" method="post" style="display:inline;">
-                <button type="submit">Eksportuj Excel</button>
-            </form>
-        </div>
-        
-        <div class="dashboard">
-            <div class="alerts">
-                <h2>Ostatnie Alerty (Łódź)</h2>
-                <table>
-                    <tr>
-                        <th>Tytuł</th>
-                        <th>Cena</th>
-                        <th>Zysk (Szac)</th>
-                        <th>Score</th>
-                        <th>Status</th>
-                        <th>Akcje</th>
-                    </tr>
-                    {% for alert in alerts %}
-                    <tr>
-                        <td><a href="{{ alert.url }}" target="_blank">{{ alert.title }}</a></td>
-                        <td>{{ alert.price_pln }} zł</td>
-                        <td>{{ alert.estimated_profit_pln }} zł</td>
-                        <td>{{ alert.score }}</td>
-                        <td>{{ alert.status }}</td>
-                        <td>
-                            <form action="/action/decision" method="post" style="display:inline;">
-                                <input type="hidden" name="alert_id" value="{{ alert.id }}">
-                                <input type="hidden" name="decision" value="approved">
-                                <button type="submit">OK</button>
-                            </form>
-                            <form action="/action/decision" method="post" style="display:inline;">
-                                <input type="hidden" name="alert_id" value="{{ alert.id }}">
-                                <input type="hidden" name="decision" value="rejected">
-                                <button type="submit">Odrzuć</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </table>
+    <div class="app-shell">
+        {% include "nav.html" %}
+        <main class="main-content">
+            {% include "page_header.html" %}
+            <div class="page-body dashboard-page">
+                <section class="action-bar" aria-label="Operacje">
+                    <div class="action-copy">
+                        <span class="section-kicker">SZYBKIE AKCJE</span>
+                        <strong>Uruchom proces</strong>
+                        <span>Ręczne pobranie i aktualizacja danych rynkowych</span>
+                    </div>
+                    <div class="action-buttons">
+                        <form action="/action/scan" method="post">
+                            <input type="hidden" name="mode" value="national">
+                            <button class="button-primary" type="submit"><svg class="icon"><use href="#i-map"/></svg>Skanuj Polskę</button>
+                        </form>
+                        <form action="/action/scan" method="post">
+                            <input type="hidden" name="mode" value="lodz_alerts">
+                            <button class="button-secondary" type="submit"><svg class="icon"><use href="#i-search"/></svg>Skanuj Łódź</button>
+                        </form>
+                        <form action="/action/recalc" method="post">
+                            <button class="button-secondary" type="submit"><svg class="icon"><use href="#i-refresh"/></svg>Przelicz rynek</button>
+                        </form>
+                        <form action="/action/export" method="post">
+                            <button class="button-secondary" type="submit"><svg class="icon"><use href="#i-download"/></svg>Eksport XLSX</button>
+                        </form>
+                    </div>
+                </section>
+
+                <section class="metric-grid" aria-label="Stan systemu">
+                    <a class="metric-card metric-teal" href="/offers?availability=current">
+                        <span class="metric-topline"><span>AKTUALNE OFERTY</span><span class="metric-icon"><svg class="icon"><use href="#i-table"/></svg></span></span>
+                        <strong>{{ active_offer_count }}</strong>
+                        <small>Zebrane ogłoszenia w bazie</small>
+                    </a>
+                    <a class="metric-card metric-green" href="/offers">
+                        <span class="metric-topline"><span>DO WERYFIKACJI</span><span class="metric-icon"><svg class="icon"><use href="#i-check"/></svg></span></span>
+                        <strong>{{ review_offer_count }}</strong>
+                        <small>Kandydaci i okazje cenowe</small>
+                    </a>
+                    <a class="metric-card metric-amber" href="/offers?availability=current">
+                        <span class="metric-topline"><span>KOLEJKA DETALI</span><span class="metric-icon"><svg class="icon"><use href="#i-clock"/></svg></span></span>
+                        <strong>{{ detail_queue_count }}</strong>
+                        <small>Oczekujące lub do ponowienia</small>
+                    </a>
+                    <a class="metric-card metric-blue" href="/offers">
+                        <span class="metric-topline"><span>GRUPY CENOWE</span><span class="metric-icon"><svg class="icon"><use href="#i-chart"/></svg></span></span>
+                        <strong>{{ market_group_count }}</strong>
+                        <small>Porównywane grupy modeli</small>
+                    </a>
+                    <a class="metric-card metric-coral" href="/offers?status=alert">
+                        <span class="metric-topline"><span>ALERTY ŁÓDŹ</span><span class="metric-icon"><svg class="icon"><use href="#i-alert"/></svg></span></span>
+                        <strong>{{ alert_count }}</strong>
+                        <small>Zapisane zdarzenia alertowe</small>
+                    </a>
+                </section>
+
+                <div class="dashboard-grid">
+                    <section class="content-section dashboard-alerts">
+                        <div class="section-heading">
+                            <div><span class="section-kicker">LOKALNE OKAZJE</span><h2>Ostatnie alerty</h2></div>
+                            <a class="text-link" href="/offers?status=alert">Zobacz alerty <svg class="icon"><use href="#i-chevron"/></svg></a>
+                        </div>
+                        <div class="table-scroll">
+                            <table class="data-table dashboard-table">
+                                <thead><tr><th>Ogłoszenie</th><th>Cena</th><th>Zysk est.</th><th>Score</th><th>Status</th><th>Decyzja</th></tr></thead>
+                                <tbody>
+                                    {% for alert in alerts %}
+                                    <tr>
+                                        <td class="dashboard-offer-cell">
+                                            {% if alert.photo_url %}<img class="offer-thumb offer-thumb-small" src="{{ alert.photo_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="offer-thumb-placeholder offer-thumb-small image-fallback" hidden><svg class="icon"><use href="#i-tv"/></svg></span>{% else %}<span class="offer-thumb-placeholder offer-thumb-small" aria-hidden="true"><svg class="icon"><use href="#i-tv"/></svg></span>{% endif %}
+                                            <span class="dashboard-offer-copy"><a href="{{ alert.url }}" target="_blank" rel="noopener noreferrer">{{ alert.title or 'Ogłoszenie bez tytułu' }}</a><small>Oferta #{{ alert.offer_id }}</small></span>
+                                        </td>
+                                        <td class="price-cell">{{ alert.price_pln if alert.price_pln is not none else '—' }}{% if alert.price_pln is not none %} zł{% endif %}</td>
+                                        <td class="profit-cell">{{ alert.estimated_profit_pln if alert.estimated_profit_pln is not none else '—' }}{% if alert.estimated_profit_pln is not none %} zł{% endif %}</td>
+                                        <td><span class="score-badge">{{ '%.1f'|format(alert.score) if alert.score is not none else '—' }}</span></td>
+                                        <td><span class="status-badge status-alert">{{ alert.status }}</span></td>
+                                        <td><div class="inline-actions">
+                                            <form action="/action/decision" method="post"><input type="hidden" name="alert_id" value="{{ alert.id }}"><input type="hidden" name="decision" value="approved"><button class="button-small button-success" type="submit">Akceptuj</button></form>
+                                            <form action="/action/decision" method="post"><input type="hidden" name="alert_id" value="{{ alert.id }}"><input type="hidden" name="decision" value="rejected"><button class="button-small button-quiet" type="submit">Pomiń</button></form>
+                                        </div></td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td class="empty-cell" colspan="6"><span class="empty-state-icon"><svg class="icon"><use href="#i-alert"/></svg></span><strong>Nie ma jeszcze alertów</strong><small>Uruchom skan Łodzi i przelicz rynek, aby odświeżyć listę.</small></td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="content-section scans-section">
+                        <div class="section-heading">
+                            <div><span class="section-kicker">AKTYWNOŚĆ SYSTEMU</span><h2>Ostatnie skany</h2></div>
+                            <span class="count-label">{{ scans|length }} przebiegów</span>
+                        </div>
+                        <div class="scan-list">
+                            {% for scan in scans %}
+                            <div class="scan-item">
+                                <span class="scan-icon {{ 'scan-icon-national' if scan.mode == 'national' else 'scan-icon-lodz' }}"><svg class="icon"><use href="#{{ 'i-map' if scan.mode == 'national' else 'i-search' }}"/></svg></span>
+                                <div class="scan-copy"><strong>{{ 'Cała Polska' if scan.mode == 'national' else 'Łódź i okolice' }}</strong><small>{{ scan.started_at or '—' }} · {{ scan.offers_new or 0 }} nowych ofert</small></div>
+                                <span class="status-badge {{ 'status-active' if scan.status in ['completed', 'success'] else 'status-neutral' }}">{{ scan.status_label }}</span>
+                            </div>
+                            {% else %}
+                            <div class="scan-empty"><svg class="icon"><use href="#i-clock"/></svg><strong>Brak historii</strong><span>Uruchom pierwszy skan.</span></div>
+                            {% endfor %}
+                        </div>
+                        <a class="section-bottom-link" href="/offers">Otwórz bazę ofert <svg class="icon"><use href="#i-chevron"/></svg></a>
+                    </section>
+                </div>
             </div>
-            
-            <div class="scans">
-                <h2>Historia Skanów</h2>
-                <table>
-                    <tr>
-                        <th>ID</th>
-                        <th>Tryb</th>
-                        <th>Status</th>
-                        <th>Nowe Oferty</th>
-                        <th>Start</th>
-                    </tr>
-                    {% for scan in scans %}
-                    <tr>
-                        <td>{{ scan.id }}</td>
-                        <td>{{ scan.mode }}</td>
-                        <td>{{ scan.status }}</td>
-                        <td>{{ scan.offers_new }}</td>
-                        <td>{{ scan.started_at }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-            </div>
-        </div>
+        </main>
     </div>
 </body>
 </html>

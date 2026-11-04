@@ -12,15 +12,16 @@ def recalculate_market(conn: sqlite3.Connection):
     
     # Pobieramy oferty do wyliczen:
     # 1. status != 'inactive'
-    # 2. system_status != 'rejected' (o ile to zostalo wczesniej zdefiniowane, jesli nie, po prostu exclude rejected)
-    # 3. price_pln > 0
-    # 4. posiadajace comparable_key
+    from scraper_ofert_tv.comparison import generate_comparable_keys
+    
+    # Wyczyść stare referencje, aby uniknąć legacy
+    cursor.execute("UPDATE offer_scores SET market_reference_id = NULL")
+    cursor.execute("DELETE FROM market_price_references")
+    
     cursor.execute("""
-        SELECT comparable_key, price_pln 
+        SELECT brand, model, technology, resolution, detected_size_inches, olx_size_bucket, price_pln 
         FROM offers 
         WHERE price_pln > 0 
-          AND comparable_key IS NOT NULL 
-          AND comparable_key != ''
           AND (system_status != 'rejected' OR system_status IS NULL)
           AND gone_at IS NULL
     """)
@@ -29,11 +30,20 @@ def recalculate_market(conn: sqlite3.Connection):
     # Grupowanie cen
     market_data = {}
     for row in rows:
-        key = row['comparable_key']
+        normalized = {
+            'brand': row['brand'],
+            'model_name': row['model'],
+            'technology': row['technology'],
+            'resolution': row['resolution'],
+            'size_inches': row['detected_size_inches'],
+            'native_olx_bucket': row['olx_size_bucket']
+        }
+        keys = generate_comparable_keys(normalized)
         price = row['price_pln']
-        if key not in market_data:
-            market_data[key] = []
-        market_data[key].append(price)
+        for k_level, key in keys.items():
+            if key not in market_data:
+                market_data[key] = []
+            market_data[key].append(price)
         
     # Zapis do market_price_references
     now = now_iso()
@@ -62,20 +72,23 @@ def recalculate_market(conn: sqlite3.Connection):
         else:
             price_p75 = price_max
             
-        # 1. UPSERT do comparable_groups (szukamy pierwszej oferty by wyciagnac metadane)
-        cursor.execute("""
-            SELECT brand, model, detected_size_inches, technology, resolution
-            FROM offers
-            WHERE comparable_key = ? LIMIT 1
-        """, (key,))
-        meta = cursor.fetchone()
-        if meta:
-            cursor.execute("""
-                INSERT OR IGNORE INTO comparable_groups
-                (comparable_key, brand, model, detected_size_inches, technology, resolution, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (key, meta['brand'], meta['model'], meta['detected_size_inches'], meta['technology'], meta['resolution'], now, now))
+        if count >= 10:
+            market_sample_confidence = 1.0
+        elif count >= 5:
+            market_sample_confidence = 0.8
+        elif count >= 3:
+            market_sample_confidence = 0.6
+        else:
+            market_sample_confidence = 0.3
+        conf_str = str(market_sample_confidence)
             
+        # 1. UPSERT do comparable_groups
+        cursor.execute("""
+            INSERT OR IGNORE INTO comparable_groups
+            (comparable_key, created_at, updated_at)
+            VALUES (?, ?, ?)
+        """, (key, now, now))
+        
         # Upsert do bazy
         cursor.execute("SELECT id FROM market_price_references WHERE comparable_key = ?", (key,))
         existing = cursor.fetchone()
@@ -88,7 +101,7 @@ def recalculate_market(conn: sqlite3.Connection):
                     p25_price_pln = ?, p75_price_pln = ?,
                     offers_count = ?, calculated_at = ?, confidence = ?
                 WHERE comparable_key = ?
-            """, (price_min, price_avg, price_median, price_p25, price_p75, count, now, 'high', key))
+            """, (price_min, price_avg, price_median, price_p25, price_p75, count, now, conf_str, key))
         else:
             cursor.execute("""
                 INSERT INTO market_price_references (
@@ -97,6 +110,6 @@ def recalculate_market(conn: sqlite3.Connection):
                     p25_price_pln, p75_price_pln,
                     offers_count, calculated_at, confidence
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (key, price_min, price_avg, price_median, price_p25, price_p75, count, now, 'high'))
+            """, (key, price_min, price_avg, price_median, price_p25, price_p75, count, now, conf_str))
             
     conn.commit()

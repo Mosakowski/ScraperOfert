@@ -19,12 +19,13 @@ def parse_detail(html: str) -> Dict[str, Any]:
     
     # 4. Parametry
     params = {}
-    param_list = parser.css('ul > li > p')
-    for p in param_list:
-        text = p.text(strip=True)
+    param_elements = parser.css('ul > li > p, ul.css-sfcl1s > li, div[data-testid="ad-parameters"] li, ul > li')
+    for el in param_elements:
+        text = el.text(strip=True)
         if ":" in text:
             key, val = text.split(":", 1)
-            params[key.strip()] = val.strip()
+            if len(key) < 30 and len(val) < 100:
+                params[key.strip()] = val.strip()
             
     # 5. Zdjecia (tylko glowne!)
     images = parser.css('div.swiper-slide img')

@@ -23,7 +23,7 @@ def test_parse_listing():
     with open(fixture_path, "r", encoding="utf-8") as f:
         html = f.read()
         
-    offers, next_url = parse_listing(html)
+    offers, next_url, warnings = parse_listing(html)
     
     assert len(offers) == 2
     

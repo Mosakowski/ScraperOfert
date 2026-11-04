@@ -4,25 +4,31 @@ from typing import List, Dict, Any, Tuple
 from selectolax.parser import HTMLParser
 import urllib.parse
 
-def parse_listing(html: str, base_url: str = "https://www.olx.pl") -> Tuple[List[Dict[str, Any]], str]:
+def parse_listing(html: str, base_url: str = "https://www.olx.pl") -> Tuple[List[Dict[str, Any]], str, List[str]]:
     """
     Parsuje HTML strony wynikowej OLX.
-    Zwraca krotke: (lista_ofert, nastepna_strona_url)
+    Zwraca krotke: (lista_ofert, nastepna_strona_url, warnings)
     """
     parser = HTMLParser(html)
     offers = []
+    warnings = []
     
-    # 1. Znajdowanie ofert
     # OLX czesto uzywa data-cy="l-card" do oznaczania kart z ofertami
     cards = parser.css('div[data-cy="l-card"]')
     
+    if not cards:
+        # Heurystyka awaryjna: poszukaj linkow bezposrednio
+        a_tags = parser.css('a[href*="/d/oferta/"]')
+        cards = [a.parent for a in a_tags if a.parent]
+        warnings.append("Uzyto heurystyki awaryjnej dla linkow /d/oferta/")
+        
     for i, card in enumerate(cards):
         try:
             offer = _parse_card(card, base_url, i + 1)
             if offer:
                 offers.append(offer)
         except Exception as e:
-            # W prawdziwym MVP moglibysmy tu logowac parser warnings
+            warnings.append(f"Blad przy parsowaniu karty {i}: {str(e)}")
             pass
             
     # 2. Szukanie linku do nastepnej strony
@@ -32,12 +38,19 @@ def parse_listing(html: str, base_url: str = "https://www.olx.pl") -> Tuple[List
         href = next_link.attributes.get('href')
         next_page_url = urllib.parse.urljoin(base_url, href)
         
-    return offers, next_page_url
+    return offers, next_page_url, warnings
 
 def _parse_card(card, base_url: str, position: int) -> Dict[str, Any]:
     a_tag = card.css_first('a')
     if not a_tag or not a_tag.attributes.get('href'):
-        return None
+        # Moze sama karta jest juz linkiem
+        if card.tag == 'a' and card.attributes.get('href'):
+            a_tag = card
+        else:
+            # Sprobujmy glebiej
+            a_tag = card.css_first('a[href*="/d/oferta/"]')
+            if not a_tag:
+                return None
         
     href = a_tag.attributes.get('href')
     # Budowanie absolutnego URL, jesli to relatywny

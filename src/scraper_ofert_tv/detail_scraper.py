@@ -17,47 +17,51 @@ class DetailScraper:
         )
         self.rate_limiter = rate_limiter or RateLimiter()
 
-    def fetch_detail(self, url: str) -> Tuple[Optional[str], Optional[str]]:
+    def fetch_detail(self, url: str) -> Tuple[Optional[str], Optional[str], Optional[dict]]:
         if self.rate_limiter.is_details_limit_reached():
-            return None, "detail_limit_reached"
+            return None, "detail_limit_reached", None
 
         self.rate_limiter.wait_backoff()
         self.rate_limiter.wait_for_detail()
 
         try:
             response = self.client.get(url)
+            diag_info = {
+                "url": str(response.url),
+                "status_code": response.status_code,
+                "request_headers": dict(response.request.headers),
+                "response_headers": dict(response.headers),
+                "body": response.text
+            }
             
             if response.status_code == 200:
                 html = response.text
-                if "datadome" in html.lower() or "captcha" in html.lower() or "akces zablokowany" in html.lower():
-                    self.rate_limiter.record_error()
-                    return None, "captcha_detected"
                 self.rate_limiter.clear_errors()
-                return html, None
+                return html, None, diag_info
                 
             elif response.status_code == 404:
                 # Ogloszenie usuniete
-                return None, "not_found"
+                return None, "not_found", diag_info
             
             elif response.status_code == 429:
                 self.rate_limiter.record_error()
-                return None, "rate_limited"
+                return None, "rate_limited", diag_info
                 
             elif response.status_code == 410:
-                return None, "gone"
+                return None, "gone", diag_info
                 
             elif response.status_code >= 500:
                 self.rate_limiter.record_error()
-                return None, f"server_error_{response.status_code}"
+                return None, f"server_error_{response.status_code}", diag_info
                 
             else:
                 self.rate_limiter.record_error()
-                return None, f"unexpected_status_{response.status_code}"
+                return None, f"unexpected_status_{response.status_code}", diag_info
                 
         except httpx.RequestError as e:
             self.rate_limiter.record_error()
             logger.error(f"Request error for {url}: {e}")
-            return None, "network_error"
+            return None, "network_error", None
             
     def close(self):
         self.client.close()

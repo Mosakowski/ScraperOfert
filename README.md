@@ -38,15 +38,16 @@ Aplikacja udostępnia interfejs pod komendą `python -m scraper_ofert_tv <komend
 - `backup-db` - tworzy kopie zapasowa SQLite (folder `data/backups/`).
 
 ## Uruchomienie na VPS (Local / MVP VPS)
-Z racji wbudowanego `scheduler` (uruchamianego z terminala za pomoca menedzera zadan, np. PM2, Supervisor lub nohup), wystarczy zaledwie kilka kroków. Należy jednak pamiętać, że aplikacja jest na etapie MVP, co oznacza, że taki serwer VPS służy do izolacji działania z dala od domowego komputera, ale z założenia nie dysponuje pełnym monitoringiem w środowisku czysto "produkcyjnym".
+Kompletna instrukcja: [VPS_DEPLOYMENT.md](VPS_DEPLOYMENT.md). Potrzebne są Python i `venv`, Git, dostęp HTTPS do publicznych stron OLX, trwały dysk na SQLite i raporty oraz dwa stale uruchomione procesy: `web` i `scheduler`. Przy backendzie Playwright trzeba osobno zainstalować Chromium i jego biblioteki systemowe. Panel nie ma własnego logowania, więc przed dostępem z internetu należy ograniczyć dostęp przez reverse proxy, VPN albo tunel.
 
-1. Sklonowac srodowisko na linuxowego serwera (np. Ubuntu).
-2. Wywolac `python -m scraper_ofert_tv migrate`.
-3. Odpal deamon w tle z uzyciem komendy `python -m scraper_ofert_tv scheduler` (np. przez Supervisor). Osobno mozna wystawic sam interfejs panelu poleceniem `python -m scraper_ofert_tv web` (i wpuscic za rewers proxy, np. Nginx), aby miec staly dostep do podgladu i ustawien. **Uwaga:** W przypadku zmiany interwałów czasowych dla pętli w panelu webowym, aby ustawienia zaczęły działać należy manualnie zrestartować proces `scheduler`!
-4. Backup bazy wykonuje sie zlecajac w crontabie: `0 3 * * * python -m scraper_ofert_tv backup-db`.
+Oba procesy muszą mieć ten sam katalog roboczy: aplikacja używa względnych ścieżek `data/offers.sqlite`, `output/` i `debug/`. Scheduler odczytuje interwały przy starcie i nie uruchamia pierwszego cyklu od razu; po zmianie interwałów wymaga restartu. Backup oraz próba odtworzenia bazy są osobnymi zadaniami operatora.
+
+## Co oznaczają zadania detali
+
+Skan list wyników zapisuje podstawowe dane oferty i dodaje zadanie do tabeli `details_queue`. Worker `process-details` otwiera stronę konkretnego ogłoszenia, pobiera opis i parametry, normalizuje model, stosuje reguły i zapisuje wynik. Zadania `pending` czekają na pobranie, `processing` są w trakcie, `done` zostały obsłużone, a `failed` wyczerpały próby. Samo znalezienie oferty na liście nie oznacza jeszcze, że można ją rzetelnie wycenić. Komenda `python -m scraper_ofert_tv process-details --limit 50` przetwarza maksymalnie 50 oczekujących wpisów; cykle schedulera pobierają odpowiednio do 100 i 50 zadań. Przy dużym napływie ofert kolejka może rosnąć.
 
 ## Kopia zapasowa SQLite
-Zawsze nalezy wykonywac `python -m scraper_ofert_tv backup-db` przed probami powaznych ingerencji lub updatow. Baza znajduje sie w `data/offers.sqlite` - nie jest ona formatem tymczasowym. Stanowi zrodlo prawdy calego systemu. Wygenerowany Excel z alertami wyciaga dane wprost z relacyjnych zlaczen, a nie logiki pamieciowej.
+Zawsze nalezy wykonywac kopię przed poważnymi zmianami. Baza `data/offers.sqlite` jest źródłem prawdy, a Excel jest raportem. Obecna komenda `backup-db` kopiuje plik SQLite bez użycia API backupu SQLite; na serwerze wykonuj ją przy zatrzymanych procesach zapisujących bazę i sprawdź odtworzenie kopii. Harmonogram backupu nie jest uruchamiany automatycznie przez aplikację.
 
 ## Definicja MVP
 MVP to Minimal Viable Product - scraper obsluguje wstepne testy wyceny, nie zaciaga danych wrazliwych, jest rate-limitowany by nie spamowac OLX-a, a reguly mozna testowac za pomoca modulu CLI badz wpisow JSON/bazy SQLite. Panel webowy wyswietla surowe agregaty dzialan.
