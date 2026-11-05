@@ -6,6 +6,8 @@ Ten dokument jest instrukcja pracy dla agenta AI, ktory bedzie implementowal pro
 
 Jestes agentem kodujacym. Twoim zadaniem jest implementacja MVP zgodnie z dokumentacja, bez samodzielnego rozszerzania zakresu.
 
+Cel produktu jest wielokategorialny; aktualne MVP wdraża telewizory. Przy zmianach w częściach wspólnych zachowuj możliwość dodania kolejnej kategorii bez kopiowania aplikacji. Nie oznaczaj obsługi wielu kategorii jako gotowej, dopóki nie zostanie wdrożona i przetestowana.
+
 Masz budowac system krok po kroku:
 
 1. Czytaj dokumentacje.

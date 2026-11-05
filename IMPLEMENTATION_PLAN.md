@@ -2,6 +2,18 @@
 
 Ten dokument opisuje techniczny plan wykonania MVP. PRD.md pozostaje zrodlem prawdy produktowej, a ten plik przeklada wymagania na kolejnosc prac, moduly i kryteria ukonczenia.
 
+Docelowo aplikacja ma obsługiwać wiele kategorii. Etapy poniżej wdrażają pierwszą z nich, telewizory, i nie oznaczają, że model produktu jest ograniczony do TV.
+
+## Ścieżka rozszerzenia po MVP
+
+1. Dodać identyfikator kategorii do oferty, profilu wyszukiwania i grupy porównawczej oraz migrować istniejące rekordy jako `telewizory`.
+2. Wydzielić konfigurację adresów, filtrów i profili wyszukiwania dla kategorii; obecny filtr przekątnej pozostaje konfiguracją TV.
+3. Wydzielić normalizację parametrów, budowanie klucza porównania i reguły zależne od kategorii. Kolejka, zapis historii, harmonogram i pobieranie stron mogą pozostać wspólne.
+4. W panelu i eksporcie dodać wybór kategorii oraz odrębne ustawienia progów. Porównania cen i alerty muszą działać w obrębie jednej kategorii.
+5. Potwierdzić podział testami na drugiej kategorii, zanim system zostanie określony jako wielokategorialny.
+
+To rozszerzenie istniejącego przepływu, bez potrzeby przepisywania całego scrapera. Szczegóły parametrów drugiej kategorii zostaną ustalone przy jej wyborze.
+
 ## 1. Zasady implementacji
 
 - Budujemy MVP, nie pelny system produkcyjny.

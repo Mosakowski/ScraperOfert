@@ -1,8 +1,10 @@
-# PRD: Scraper ofert telewizorow z OLX
+# PRD: Uniwersalny scraper ofert - MVP dla telewizorow z OLX
 
 ## 1. Cel produktu
 
-Celem projektu jest zbudowanie narzedzia wspierajacego flipowanie telewizorow. System bedzie cyklicznie wyszukiwal publiczne oferty TV z OLX, pobieral dane z list wynikow oraz stron poszczegolnych ofert, ocenial atrakcyjnosc ofert wedlug edytowalnych regul i eksportowal wynik do pliku Excel.
+Celem produktu jest uniwersalny system wyszukiwania i oceny ofert z różnych kategorii. Telewizory na OLX są pierwszą wdrażaną kategorią i zakresem tego MVP. System będzie cyklicznie wyszukiwał publiczne oferty TV, pobierał dane z list wyników oraz stron poszczególnych ofert, oceniał atrakcyjność według edytowalnych reguł i eksportował wynik do pliku Excel.
+
+Kolejne kategorie powinny korzystać ze wspólnego przepływu: pobrania listy i detali, kolejki, historii ceny, reguł, porównania ofert, scoringu, harmonogramu i panelu. Właściwe dla kategorii są: adresy i filtry wyszukiwania, rozpoznawane parametry, klucz porównania, reguły oraz progi oceny. Oferty i ich grupy porównawcze muszą mieć identyfikator kategorii, aby ceny różnych typów produktów nie były mieszane. Dodanie kategorii nie powinno wymagać kopiowania całej aplikacji ani osobnej bazy.
 
 Narzedzie nie ma automatycznie kupowac ofert ani kontaktowac sie ze sprzedawcami. Jego rola jest szybkie wskazywanie ofert z potencjalnym zyskiem, ofert ryzykownych oraz ofert wymagajacych recznej weryfikacji.
 
@@ -24,6 +26,8 @@ Problemem jest tez powtarzalnosc analizy. Te same kryteria trzeba stosowac do wi
 Narzedzie ma zautomatyzowac zbieranie, porzadkowanie i wstepna ocene ofert, zostawiajac uzytkownikowi finalna decyzje biznesowa: czy dana oferta nadaje sie do zakupu i pozniejszej odsprzedazy z zyskiem.
 
 ## 3. Zakres MVP
+
+Poniższy zakres dotyczy pierwszej kategorii: telewizorów. Obsługa kolejnych kategorii jest celem produktu po MVP; obecny kod nie udostępnia jeszcze wyboru kategorii.
 
 MVP obejmuje:
 
