@@ -13,24 +13,30 @@
             {% include "page_header.html" %}
             <div class="page-body offers-page">
                 <section class="content-section offers-section">
-                    <div class="category-bar" aria-label="Filtruj rozmiar telewizora">
-                        <div class="category-bar-label"><span class="section-kicker">SZYBKIE FILTRY</span><span>Rozmiar ekranu</span></div>
+                    <div class="category-bar" aria-label="Filtruj kategorię OLX">
+                        <div class="category-bar-label"><span class="section-kicker">SZYBKIE FILTRY</span><span>Kategoria i profil</span></div>
                         <nav class="category-tabs">
-                            {% for category in category_filters %}
-                            <a href="{{ category.url }}" class="category-tab {{ 'is-active' if category.active else '' }}">
-                                <span>{{ category.label }}</span><small>{{ category.count }}</small>
+                            {% for item in categories %}
+                            <a href="/offers?category={{ item.id }}" class="category-tab {{ 'is-active' if selected_category == item.id else '' }}">
+                                <span>{{ item.label }}</span>
                             </a>
                             {% endfor %}
                         </nav>
                     </div>
 
                     <form class="offer-filters" action="/offers" method="get">
+                        <label>Kategoria
+                            <select name="category" onchange="this.form.submit()">
+                                <option value="">Wszystkie kategorie</option>
+                                {% for item in categories %}<option value="{{ item.id }}" {{ 'selected' if selected_category == item.id else '' }}>{{ item.label }}</option>{% endfor %}
+                            </select>
+                        </label>
                         <input type="hidden" name="sort_by" value="{{ sort_by }}">
                         <input type="hidden" name="sort_dir" value="{{ sort_dir }}">
                         <label class="filter-search">Szukaj w ofertach
                             <input type="search" name="q" value="{{ q }}" placeholder="Tytuł, marka, model lub miasto">
                         </label>
-                        <label>Rozmiar
+                        {% if not selected_category or selected_category == 'televisions' %}<label>Profil TV
                             <select name="size">
                                 <option value="" {{ 'selected' if not selected_size else '' }}>Wszystkie kategorie</option>
                                 {% for profile in profiles %}
@@ -38,7 +44,7 @@
                                 {% endfor %}
                                 <option value="unknown" {{ 'selected' if selected_size == 'unknown' else '' }}>Nieznany rozmiar · {{ unknown_count }}</option>
                             </select>
-                        </label>
+                        </label>{% endif %}
                         <label>Status
                             <select name="status">
                                 <option value="">Wszystkie statusy</option>
@@ -81,7 +87,7 @@
                                     <th aria-sort="{{ sort_links.title.aria_sort }}"><a href="{{ sort_links.title.url }}">Ogłoszenie <span>{{ sort_links.title.indicator }}</span></a></th>
                                     <th aria-sort="{{ sort_links.price.aria_sort }}"><a href="{{ sort_links.price.url }}">Cena <span>{{ sort_links.price.indicator }}</span></a></th>
                                     <th aria-sort="{{ sort_links.city.aria_sort }}"><a href="{{ sort_links.city.url }}">Lokalizacja <span>{{ sort_links.city.indicator }}</span></a></th>
-                                    <th aria-sort="{{ sort_links.size.aria_sort }}"><a href="{{ sort_links.size.url }}">Rozmiar <span>{{ sort_links.size.indicator }}</span></a></th>
+                                    <th aria-sort="{{ sort_links.size.aria_sort }}"><a href="{{ sort_links.size.url }}">Parametry <span>{{ sort_links.size.indicator }}</span></a></th>
                                     <th aria-sort="{{ sort_links.model.aria_sort }}"><a href="{{ sort_links.model.url }}">Marka / model <span>{{ sort_links.model.indicator }}</span></a></th>
                                     <th>Technologia</th>
                                     <th aria-sort="{{ sort_links.score.aria_sort }}"><a href="{{ sort_links.score.url }}">Score <span>{{ sort_links.score.indicator }}</span></a></th>
@@ -95,8 +101,8 @@
                                 {% for offer in offers %}
                                 <tr>
                                     <td class="offer-image-cell">
-                                        {% if offer.photo_url %}<img class="offer-thumb" src="{{ offer.photo_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="offer-thumb-placeholder image-fallback" hidden><svg class="icon"><use href="#i-tv"/></svg></span>
-                                        {% else %}<span class="offer-thumb-placeholder" aria-label="Brak zdjęcia"><svg class="icon"><use href="#i-tv"/></svg></span>{% endif %}
+                                        {% if offer.photo_url %}<img class="offer-thumb" src="{{ offer.photo_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="offer-thumb-placeholder image-fallback" hidden><svg class="icon"><use href="#i-table"/></svg></span>
+                                        {% else %}<span class="offer-thumb-placeholder" aria-label="Brak zdjęcia"><svg class="icon"><use href="#i-table"/></svg></span>{% endif %}
                                     </td>
                                     <td class="offer-title-cell">
                                         <a href="{{ offer.url }}" target="_blank" rel="noopener noreferrer">{{ offer.title or 'Ogłoszenie bez tytułu' }}</a>
@@ -104,7 +110,7 @@
                                     </td>
                                     <td class="price-cell">{% if offer.price_pln is not none %}{{ offer.price_pln }} zł{% else %}—{% endif %}</td>
                                     <td class="location-cell">{{ offer.location_label }}</td>
-                                    <td><span class="size-chip">{{ offer.size_label }}</span></td>
+                                    <td><span class="size-chip">{% if offer.category_id == 'laptops' %}{{ offer.attributes.get('ram_gb', '—') }} GB RAM · {{ offer.attributes.get('storage_gb', '—') }} GB{% else %}{{ offer.size_label }}{% endif %}</span></td>
                                     <td class="model-cell">{{ offer.details_label }}</td>
                                     <td>{{ offer.technology_label }}</td>
                                     <td class="numeric-cell">{% if offer.score is not none %}<span class="score-badge">{{ '%.1f'|format(offer.score) }}</span>{% else %}—{% endif %}</td>

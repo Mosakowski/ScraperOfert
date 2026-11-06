@@ -1,5 +1,6 @@
 import sqlite3
 import statistics
+import json
 from typing import List, Dict, Any
 from scraper_ofert_tv.storage import get_connection, now_iso
 
@@ -19,7 +20,8 @@ def recalculate_market(conn: sqlite3.Connection):
     cursor.execute("DELETE FROM market_price_references")
     
     cursor.execute("""
-        SELECT brand, model, technology, resolution, detected_size_inches, olx_size_bucket, price_pln 
+        SELECT brand, model, technology, resolution, detected_size_inches, olx_size_bucket,
+               price_pln, category_id, attributes_json
         FROM offers 
         WHERE price_pln > 0 
           AND (system_status != 'rejected' OR system_status IS NULL)
@@ -30,15 +32,17 @@ def recalculate_market(conn: sqlite3.Connection):
     # Grupowanie cen
     market_data = {}
     for row in rows:
+        category_id = row["category_id"] or "televisions"
         normalized = {
             'brand': row['brand'],
             'model_name': row['model'],
             'technology': row['technology'],
             'resolution': row['resolution'],
             'size_inches': row['detected_size_inches'],
-            'native_olx_bucket': row['olx_size_bucket']
+            'native_olx_bucket': row['olx_size_bucket'],
+            'attributes': json.loads(row["attributes_json"] or "{}")
         }
-        keys = generate_comparable_keys(normalized)
+        keys = generate_comparable_keys(normalized, category_id=category_id)
         price = row['price_pln']
         for k_level, key in keys.items():
             if key not in market_data:
@@ -85,9 +89,9 @@ def recalculate_market(conn: sqlite3.Connection):
         # 1. UPSERT do comparable_groups
         cursor.execute("""
             INSERT OR IGNORE INTO comparable_groups
-            (comparable_key, created_at, updated_at)
-            VALUES (?, ?, ?)
-        """, (key, now, now))
+            (comparable_key, category_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+        """, (key, key.split("|", 1)[0] if "|" in key else "televisions", now, now))
         
         # Upsert do bazy
         cursor.execute("SELECT id FROM market_price_references WHERE comparable_key = ?", (key,))

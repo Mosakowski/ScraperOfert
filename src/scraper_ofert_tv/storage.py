@@ -46,14 +46,15 @@ def update_search_run(conn: sqlite3.Connection, run_id: int, status: str, **kwar
     conn.execute(query, values)
     conn.commit()
 
-def create_search_profile_run(conn: sqlite3.Connection, run_id: int, profile_id: str, mode: str, search_url: str) -> int:
+def create_search_profile_run(conn: sqlite3.Connection, run_id: int, profile_id: str, mode: str, search_url: str,
+                              search_profile_id: str = None) -> int:
     """Tworzy nowy przebieg pojedynczego profilu."""
     cursor = conn.cursor()
     cursor.execute(
         """INSERT INTO search_profile_runs 
-           (search_run_id, size_profile_id, mode, status, search_url, started_at) 
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (run_id, profile_id, mode, "running", search_url, now_iso())
+           (search_run_id, size_profile_id, mode, status, search_url, started_at, search_profile_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (run_id, profile_id, mode, "running", search_url, now_iso(), search_profile_id)
     )
     conn.commit()
     return cursor.lastrowid
@@ -89,7 +90,8 @@ def upsert_offer(conn: sqlite3.Connection, offer_data: dict) -> int:
         'price_pln', 'raw_price', 'negotiable', 'is_free', 'seller_type', 'seller_name', 
         'seller_profile_url', 'condition_value', 'city', 'district', 'region', 'raw_location', 
         'distance_from_lodz_km', 'olx_size_bucket', 'detected_size_inches', 'brand', 'model', 
-        'technology', 'resolution', 'comparable_key', 'comparison_confidence', 'system_status', 
+        'technology', 'resolution', 'comparable_key', 'comparison_confidence', 'system_status',
+        'category_id', 'attributes_json',
         'user_decision', 'user_note', 'contacted_at', 'purchased_at', 'ignored_until', 
         'manual_priority', 'first_seen_at', 'last_seen_at', 'last_detail_fetch_at', 'gone_at', 
         'created_at', 'updated_at'
@@ -105,6 +107,9 @@ def upsert_offer(conn: sqlite3.Connection, offer_data: dict) -> int:
         if 'price_pln' in offer_data:
             update_fields.append("price_pln = ?")
             update_values.append(offer_data['price_pln'])
+        if 'category_id' in offer_data:
+            update_fields.append("category_id = ?")
+            update_values.append(offer_data['category_id'])
             
         update_values.append(offer_id)
         update_query = f"UPDATE offers SET {', '.join(update_fields)} WHERE id = ?"
@@ -131,7 +136,7 @@ def create_offer_snapshot(conn: sqlite3.Connection, snapshot_data: dict) -> int:
     snapshot_data['scraped_at'] = snapshot_data.get('scraped_at', now_iso())
     
     SNAPSHOTS_WHITELIST = {
-        'offer_id', 'search_run_id', 'search_profile_run_id', 'scan_mode', 'size_profile_id',
+        'offer_id', 'search_run_id', 'search_profile_run_id', 'scan_mode', 'size_profile_id', 'category_id',
         'listing_page_url', 'listing_page_number', 'listing_position', 'title', 'price_pln',
         'raw_price', 'negotiable', 'city', 'district', 'region', 'raw_location', 'description',
         'params_json', 'photo_count', 'main_photo_url', 'listing_thumbnail_url',

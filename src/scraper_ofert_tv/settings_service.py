@@ -63,6 +63,76 @@ class SettingsService:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+    def get_categories(self, enabled_only: bool = True):
+        conn = get_connection(self.db_path) if self.db_path else get_connection()
+        query = "SELECT * FROM categories"
+        if enabled_only:
+            query += " WHERE enabled = 1"
+        query += " ORDER BY label"
+        rows = [dict(row) for row in conn.execute(query).fetchall()]
+        conn.close()
+        for row in rows:
+            row["allowed_filter_params"] = json.loads(row.pop("allowed_filter_params_json", "[]"))
+        return rows
+
+    def get_search_profiles(self, enabled_only: bool = False):
+        conn = get_connection(self.db_path) if self.db_path else get_connection()
+        query = """
+            SELECT p.*, c.label AS category_label, c.path AS category_path,
+                   c.domain AS category_domain, c.allowed_filter_params_json
+            FROM search_profiles p JOIN categories c ON c.id = p.category_id
+        """
+        if enabled_only:
+            query += " WHERE p.enabled = 1 AND c.enabled = 1"
+        query += " ORDER BY p.priority DESC, c.label, p.label"
+        rows = [dict(row) for row in conn.execute(query).fetchall()]
+        conn.close()
+        for row in rows:
+            row["filters"] = json.loads(row.pop("filters_json", "{}"))
+            row["allowed_filter_params"] = json.loads(row.pop("allowed_filter_params_json", "[]"))
+        return rows
+
+    def save_search_profile(self, profile_id: str, category_id: str, label: str,
+                            filters: dict, max_pages: int = 5, enabled: int = 1, interval_hours: int = 0):
+        conn = get_connection(self.db_path) if self.db_path else get_connection()
+        category = conn.execute("SELECT id, allowed_filter_params_json FROM categories WHERE id=? AND enabled=1", (category_id,)).fetchone()
+        if not category:
+            conn.close()
+            raise ValueError("Nieznana lub wyłączona kategoria OLX")
+        allowed = set(json.loads(category["allowed_filter_params_json"] or "[]"))
+        requested = set((filters.get("olx_filters") or {}).keys())
+        if not requested.issubset(allowed):
+            conn.close()
+            raise ValueError("Profil używa filtra, którego nie skonfigurowano dla kategorii")
+        max_pages = max(1, min(int(max_pages), 100))
+        interval_hours = max(0, min(int(interval_hours), 168))
+        now = now_iso()
+        conn.execute("""
+            INSERT INTO search_profiles
+              (id, category_id, label, enabled, filters_json, max_pages, interval_hours,
+               priority, legacy_size_profile_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 100, NULL, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET category_id=excluded.category_id,
+              label=excluded.label, enabled=excluded.enabled, filters_json=excluded.filters_json,
+              max_pages=excluded.max_pages, interval_hours=excluded.interval_hours, updated_at=excluded.updated_at
+        """, (profile_id, category_id, label, enabled, json.dumps(filters), max_pages, interval_hours, now, now))
+        conn.commit()
+        conn.close()
+
+    def save_category(self, category_id: str, label: str, path: str, allowed_filter_params: list[str]):
+        conn = get_connection(self.db_path) if self.db_path else get_connection()
+        now = now_iso()
+        conn.execute("""
+            INSERT INTO categories
+              (id, label, path, domain, allowed_filter_params_json, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, 'generic', ?, 1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET label=excluded.label, path=excluded.path,
+              allowed_filter_params_json=excluded.allowed_filter_params_json,
+              enabled=1, updated_at=excluded.updated_at
+        """, (category_id, label, path, json.dumps(allowed_filter_params), now, now))
+        conn.commit()
+        conn.close()
         
     def export_to_yaml(self, path: Path):
         data = {

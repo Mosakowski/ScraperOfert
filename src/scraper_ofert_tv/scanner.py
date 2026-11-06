@@ -38,22 +38,11 @@ class Scanner:
         
         run_id = create_search_run(conn, mode)
         
-        profiles = self.settings.get_size_profiles()
+        profiles = self.settings.get_search_profiles(enabled_only=True)
         if specific_profile:
             profiles = [p for p in profiles if p["id"] == specific_profile]
             
         global_filters = self.settings.get_global_filters()
-        
-        if mode == "national":
-            mode_settings = self.settings.get_national_scan_settings()
-            location = None
-            radius = None
-        else:
-            mode_settings = self.settings.get_lodz_alerts_settings()
-            location = mode_settings.get("location", "lodz")
-            radius = mode_settings.get("radius_km", 50)
-            
-        max_pages = mode_settings.get("max_pages_per_profile", 25)
         
         total_new_offers = 0
         total_known_offers = 0
@@ -61,18 +50,27 @@ class Scanner:
         profile_results = []
         
         for profile in profiles:
-            if not profile.get("enabled"):
-                continue
-                
+            profile_filters = profile.get("filters") or {}
+            profile_mode = profile_filters.get("mode", mode)
+            if profile_mode == "national":
+                mode_settings = self.settings.get_national_scan_settings()
+                location = None
+                radius = None
+            else:
+                mode_settings = self.settings.get_lodz_alerts_settings()
+                location = profile_filters.get("location") or mode_settings.get("location", "lodz")
+                radius = int(profile_filters.get("radius_km") or mode_settings.get("radius_km", 50))
+            mode_max_pages = int(mode_settings.get("max_pages_per_profile", 25))
+            profile_max_pages = min(int(profile.get("max_pages") or mode_max_pages), mode_max_pages)
             profile_result = self._scan_profile(
                 conn=conn,
                 run_id=run_id,
-                mode=mode,
+                mode=profile_mode,
                 profile=profile,
                 global_filters=global_filters,
                 location=location,
                 radius_km=radius,
-                max_pages=max_pages
+                max_pages=profile_max_pages
             )
             
             profile_results.append(profile_result)
@@ -118,19 +116,32 @@ class Scanner:
         self.scraper.close()
         
     def _scan_profile(self, conn, run_id, mode, profile, global_filters, location, radius_km, max_pages):
+        profile_filters = profile.get("filters") or {}
+        profile_price_min = profile_filters.get("price_min")
+        profile_price_max = profile_filters.get("price_max")
+        if profile_price_min is None:
+            profile_price_min = global_filters.get("price_min")
+        if profile_price_max is None:
+            profile_price_max = global_filters.get("price_max")
+        olx_filters = profile_filters.get("olx_filters") or {}
         start_url = build_olx_search_url(
             mode=mode,
             location=location,
             radius_km=radius_km,
-            price_min=global_filters.get("price_min"),
-            price_max=global_filters.get("price_max"),
-            seller_type=global_filters.get("seller_type"),
-            condition=global_filters.get("condition"),
-            size_filter=profile.get("olx_size_value"),
-            page=1
+            price_min=profile_price_min,
+            price_max=profile_price_max,
+            seller_type=profile_filters.get("seller_type", global_filters.get("seller_type")),
+            condition=profile_filters.get("condition", global_filters.get("condition")),
+            page=1,
+            category_path=profile.get("category_path"),
+            olx_filters=olx_filters,
+            query=profile_filters.get("query")
         )
         
-        profile_run_id = create_search_profile_run(conn, run_id, profile["id"], mode, start_url)
+        legacy_profile_id = profile.get("legacy_size_profile_id") or "laptops_all"
+        profile_run_id = create_search_profile_run(
+            conn, run_id, legacy_profile_id, mode, start_url, search_profile_id=profile["id"]
+        )
         
         current_url = start_url
         page_num = 1
@@ -217,7 +228,9 @@ class Scanner:
             page_new = 0
             
             for offer_data in offers:
-                offer_data['olx_size_bucket'] = profile.get("olx_size_value")
+                offer_data['olx_size_bucket'] = olx_filters.get("search[filter_enum_size][0]")
+                offer_data['category_id'] = profile["category_id"]
+                offer_data['attributes_json'] = "{}"
                 
                 # Zapis do offers
                 offer_id = upsert_offer(conn, offer_data)
@@ -249,7 +262,8 @@ class Scanner:
                 snapshot_data['search_run_id'] = run_id
                 snapshot_data['search_profile_run_id'] = profile_run_id
                 snapshot_data['scan_mode'] = mode
-                snapshot_data['size_profile_id'] = profile["id"]
+                snapshot_data['size_profile_id'] = legacy_profile_id
+                snapshot_data['category_id'] = profile["category_id"]
                 snapshot_data['listing_page_url'] = current_url
                 snapshot_data['listing_page_number'] = page_num
                 
@@ -265,12 +279,14 @@ class Scanner:
                     mode=mode,
                     location=location,
                     radius_km=radius_km,
-                    price_min=global_filters.get("price_min"),
-                    price_max=global_filters.get("price_max"),
-                    seller_type=global_filters.get("seller_type"),
-                    condition=global_filters.get("condition"),
-                    size_filter=profile.get("olx_size_value"),
-                    page=page_num
+                    price_min=profile_price_min,
+                    price_max=profile_price_max,
+                    seller_type=profile_filters.get("seller_type", global_filters.get("seller_type")),
+                    condition=profile_filters.get("condition", global_filters.get("condition")),
+                    page=page_num,
+                    category_path=profile.get("category_path"),
+                    olx_filters=olx_filters,
+                    query=profile_filters.get("query")
                 )
                 
             # Zatrzymaj jesli np. wszystko znane (opcjonalny warunek z PRD)

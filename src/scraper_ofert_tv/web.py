@@ -7,6 +7,8 @@ import os
 import sqlite3
 import subprocess
 from urllib.parse import urlencode
+import json
+import re
 
 from scraper_ofert_tv.storage import get_connection
 
@@ -119,6 +121,7 @@ def index(request: Request):
 def list_offers(
     request: Request,
     q: str = Query(default="", max_length=120),
+    category: str = "",
     size: str = "",
     status: str = "",
     availability: str = "current",
@@ -130,11 +133,15 @@ def list_offers(
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, label, olx_size_value, enabled FROM size_profiles ORDER BY sort_order")
+    cursor.execute("SELECT id, label, olx_size_value, enabled FROM size_profiles WHERE category_id='televisions' ORDER BY sort_order")
     profiles = [dict(row) for row in cursor.fetchall()]
     profile_by_id = {profile["id"]: profile for profile in profiles}
     profile_by_value = {profile["olx_size_value"]: profile for profile in profiles}
 
+    categories = [dict(row) for row in cursor.execute("SELECT id,label FROM categories WHERE enabled=1 ORDER BY label").fetchall()]
+    category_ids = {row["id"] for row in categories}
+    if category not in category_ids:
+        category = ""
     cursor.execute("SELECT DISTINCT system_status FROM offers WHERE system_status IS NOT NULL ORDER BY system_status")
     statuses = [row["system_status"] for row in cursor.fetchall()]
 
@@ -152,6 +159,8 @@ def list_offers(
         sort_dir = "desc"
 
     base_conditions = []
+    if category:
+        base_conditions.append("o.category_id = ?")
     if availability == "current":
         base_conditions.append("o.gone_at IS NULL")
     elif availability == "unavailable":
@@ -161,11 +170,11 @@ def list_offers(
     if base_conditions:
         category_rows_query += " WHERE " + " AND ".join(base_conditions)
     category_rows_query += " GROUP BY o.olx_size_bucket"
-    cursor.execute(category_rows_query)
+    cursor.execute(category_rows_query, [category] if category else [])
     category_counts = {row["olx_size_bucket"] or "": row["total"] for row in cursor.fetchall()}
 
     conditions = list(base_conditions)
-    params = []
+    params = [category] if category else []
     if size == "unknown":
         conditions.append("(o.olx_size_bucket IS NULL OR TRIM(o.olx_size_bucket) = '')")
     elif size:
@@ -197,6 +206,7 @@ def list_offers(
         SELECT o.id, o.url, o.title, o.price_pln, o.city, o.district, o.raw_location,
                o.olx_size_bucket, o.detected_size_inches, o.brand, o.model,
                o.technology, o.resolution, o.system_status, o.gone_at, o.last_seen_at,
+               o.category_id, o.attributes_json,
                s.score, s.estimated_profit_pln, s.comparison_confidence,
                (SELECT COALESCE(os.main_photo_url, os.listing_thumbnail_url)
                 FROM offer_snapshots os
@@ -217,11 +227,12 @@ def list_offers(
 
     status_labels = {value: OFFER_STATUS_LABELS.get(value, value.replace("_", " ").capitalize()) for value in statuses}
     for offer in offers:
+        offer["attributes"] = json.loads(offer.get("attributes_json") or "{}")
         profile = profile_by_value.get(offer["olx_size_bucket"])
         bucket_label = profile["label"] if profile else (offer["olx_size_bucket"] or "Nieznany rozmiar")
         if offer["detected_size_inches"]:
             bucket_label += f" · {offer['detected_size_inches']} cali"
-        offer["size_label"] = bucket_label
+        offer["size_label"] = bucket_label if offer["category_id"] == "televisions" else "—"
         offer["status_label"] = "Niedostępna" if offer["gone_at"] else status_labels.get(
             offer["system_status"], offer["system_status"]
         )
@@ -232,10 +243,15 @@ def list_offers(
         )
         offer["location_label"] = " · ".join(filter(None, [offer["city"], offer["district"]])) or offer["raw_location"] or "—"
         offer["details_label"] = " · ".join(filter(None, [offer["brand"], offer["model"]])) or "Brak wykrytego modelu"
-        offer["technology_label"] = " · ".join(filter(None, [offer["technology"], offer["resolution"]])) or "—"
+        if offer["category_id"] == "laptops":
+            offer["technology_label"] = " · ".join(filter(None, [offer["attributes"].get("cpu"), offer["attributes"].get("gpu")])) or "—"
+            offer["details_label"] += (f" · {offer['attributes'].get('ram_gb')} GB RAM" if offer["attributes"].get("ram_gb") else "")
+        else:
+            offer["technology_label"] = " · ".join(filter(None, [offer["technology"], offer["resolution"]])) or "—"
 
     query_state = {
         "q": q,
+        "category": category,
         "size": size,
         "status": status,
         "availability": availability,
@@ -293,6 +309,8 @@ def list_offers(
             "category_counts": category_counts,
             "unknown_count": category_counts.get("", 0),
             "q": q,
+            "categories": categories,
+            "selected_category": category,
             "selected_size": size,
             "selected_status": status,
             "availability": availability,
@@ -315,10 +333,11 @@ def list_offers(
     )
 
 @app.post("/action/scan")
-def run_scan(mode: str = Form(...)):
+def run_scan(mode: str = Form(...), profile_id: str = Form(default="")):
     if mode not in ["national", "lodz_alerts"]:
         return RedirectResponse(url="/?error=invalid_mode", status_code=303)
-    run_cli_command(f"scan --mode {mode}")
+    profile_arg = f" --profile {profile_id}" if re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", profile_id or "") else ""
+    run_cli_command(f"scan --mode {mode}{profile_arg}")
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/action/recalc")
@@ -347,7 +366,8 @@ def get_settings(request: Request):
     global_filters = service.get_global_filters()
     scheduler = service.get_setting("scheduler", {"national_hours": 12, "lodz_hours": 2, "export_hours": 2})
     scoring = service.get_scoring_settings()
-    size_profiles = service.get_size_profiles()
+    categories = service.get_categories()
+    search_profiles = service.get_search_profiles()
     
     return templates.TemplateResponse(
         request=request,
@@ -357,7 +377,8 @@ def get_settings(request: Request):
             "global_filters": global_filters,
             "scheduler": scheduler,
             "scoring": scoring,
-            "size_profiles": size_profiles,
+            "categories": categories,
+            "search_profiles": search_profiles,
             "active_page": "settings",
             "page_title": "Ustawienia",
             "page_subtitle": "Filtry · profile · scoring · harmonogram",
@@ -392,9 +413,62 @@ def save_settings(
 @app.post("/settings/profile/toggle")
 def toggle_profile(profile_id: str = Form(...), enabled: int = Form(...)):
     conn = get_connection()
-    conn.execute("UPDATE size_profiles SET enabled = ? WHERE id = ?", (enabled, profile_id))
+    conn.execute("UPDATE search_profiles SET enabled = ?, updated_at = datetime('now') WHERE id = ?", (enabled, profile_id))
     conn.commit()
     conn.close()
+    return RedirectResponse(url="/settings", status_code=303)
+
+@app.post("/settings/category/save")
+def save_category(
+    category_id: str = Form(...), label: str = Form(...), path: str = Form(...),
+    allowed_filter_params_json: str = Form("[]")
+):
+    if (not re.fullmatch(r"[a-zA-Z0-9_-]{1,60}", category_id or "") or len(label.strip()) > 80
+            or not re.fullmatch(r"/(?:[a-z0-9-]+/)+", path or "") or ".." in path):
+        return RedirectResponse(url="/settings?error=invalid_category", status_code=303)
+    try:
+        filter_params = json.loads(allowed_filter_params_json or "[]")
+        if not isinstance(filter_params, list) or any(
+            not isinstance(key, str) or not re.fullmatch(r"search\[filter_[a-zA-Z0-9_:-]+\](?:\[\d+\])?", key)
+            for key in filter_params
+        ):
+            raise ValueError("Invalid filter map")
+        SettingsService().save_category(category_id, label.strip(), path, filter_params)
+    except (ValueError, json.JSONDecodeError):
+        return RedirectResponse(url="/settings?error=invalid_category", status_code=303)
+    return RedirectResponse(url="/settings", status_code=303)
+
+@app.post("/settings/profile/save")
+def save_search_profile(
+    category_id: str = Form(...), profile_id: str = Form(...), label: str = Form(...),
+    price_min: int = Form(0), price_max: int = Form(0), query: str = Form(""),
+    max_pages: int = Form(5), interval_hours: int = Form(0), mode: str = Form("national"),
+    location: str = Form("lodz"), radius_km: int = Form(50), olx_filters_json: str = Form("{}")
+):
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", profile_id or "") or len(label.strip()) > 100:
+        return RedirectResponse(url="/settings?error=invalid_profile", status_code=303)
+    try:
+        olx_filters = json.loads(olx_filters_json or "{}")
+        if not isinstance(olx_filters, dict) or any(
+            not isinstance(key, str) or not re.fullmatch(r"search\[filter_[a-zA-Z0-9_:-]+\](?:\[\d+\])?", key)
+            for key in olx_filters
+        ):
+            raise ValueError("Invalid OLX filters")
+        if mode not in {"national", "lodz_alerts"}:
+            raise ValueError("Invalid search mode")
+        filters = {
+            "mode": mode,
+            "location": location.strip()[:80] or "lodz",
+            "radius_km": max(1, min(int(radius_km), 500)),
+            "price_min": price_min or None,
+            "price_max": price_max or None,
+            "query": query.strip()[:120] or None,
+            "olx_filters": olx_filters,
+        }
+        SettingsService().save_search_profile(profile_id, category_id, label.strip(), filters, max_pages,
+                                              interval_hours=interval_hours)
+    except (ValueError, json.JSONDecodeError):
+        return RedirectResponse(url="/settings?error=invalid_profile", status_code=303)
     return RedirectResponse(url="/settings", status_code=303)
 
 @app.get("/rules")

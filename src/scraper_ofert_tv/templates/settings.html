@@ -96,32 +96,60 @@
 
                 <section class="content-section settings-section">
                     <div class="section-heading">
-                        <div><span class="section-kicker">04 · SEGMENTY RYNKU</span><h2>Profile rozmiarów</h2><p>{{ size_profiles|length }} kategorii wyszukiwania</p></div>
-                        <span class="section-icon"><svg class="icon"><use href="#i-tv"/></svg></span>
+                        <div><span class="section-kicker">04 · KATEGORIE OLX</span><h2>Profile monitorowania</h2><p>Wybierz kategorię, filtry i limity. Kategoria definiuje ścieżkę OLX oraz dostępne atrybuty.</p></div>
+                        <span class="section-icon"><svg class="icon"><use href="#i-search"/></svg></span>
                     </div>
                     <div class="table-scroll">
                         <table class="data-table settings-table">
-                            <thead><tr><th>Kategoria</th><th>Wartość filtra OLX</th><th>Status</th><th>Akcja</th></tr></thead>
+                            <thead><tr><th>Profil</th><th>Kategoria</th><th>Filtry OLX</th><th>Stan</th><th>Akcje</th></tr></thead>
                             <tbody>
-                                {% for profile in size_profiles %}
+                                {% for profile in search_profiles %}
                                 <tr>
                                     <td class="primary-cell">{{ profile.label }}</td>
-                                    <td><code>{{ profile.olx_size_value }}</code></td>
+                                    <td>{{ profile.category_label }}</td>
+                                    <td><code>{{ profile.filters }}</code></td>
                                     <td><span class="status-badge {{ 'status-active' if profile.enabled else 'status-neutral' }}">{{ 'Aktywny' if profile.enabled else 'Wyłączony' }}</span></td>
-                                    <td>
-                                        <form action="/settings/profile/toggle" method="post">
-                                            <input type="hidden" name="profile_id" value="{{ profile.id }}">
-                                            <input type="hidden" name="enabled" value="{{ 0 if profile.enabled else 1 }}">
-                                            <button class="button-small {{ 'button-quiet' if profile.enabled else 'button-success' }}" type="submit">{{ 'Wyłącz' if profile.enabled else 'Włącz' }}</button>
-                                        </form>
-                                    </td>
+                                    <td><div class="action-buttons">
+                                        <form action="/action/scan" method="post"><input type="hidden" name="mode" value="national"><input type="hidden" name="profile_id" value="{{ profile.id }}"><button class="button-small button-success" type="submit">Uruchom</button></form>
+                                        <form action="/settings/profile/toggle" method="post"><input type="hidden" name="profile_id" value="{{ profile.id }}"><input type="hidden" name="enabled" value="{{ 0 if profile.enabled else 1 }}"><button class="button-small button-quiet" type="submit">{{ 'Wyłącz' if profile.enabled else 'Włącz' }}</button></form>
+                                    </div></td>
                                 </tr>
                                 {% else %}
-                                <tr><td class="empty-cell" colspan="4">Brak skonfigurowanych profili.</td></tr>
+                                <tr><td class="empty-cell" colspan="5">Brak profili monitorowania.</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
+                    <form class="stacked-form profile-create-form" action="/settings/profile/save" method="post">
+                        <h3>Dodaj profil</h3>
+                        <div class="field-grid field-grid-four">
+                            <label>ID profilu<input name="profile_id" required pattern="[A-Za-z0-9_-]{1,80}" placeholder="laptopy_lodz"></label>
+                            <label>Nazwa<input name="label" required maxlength="100" placeholder="Laptopy w Łodzi"></label>
+                            <label>Kategoria<select name="category_id" required>{% for category in categories %}<option value="{{ category.id }}">{{ category.label }} · {{ category.path }}</option>{% endfor %}</select></label>
+                            <label>Maks. stron<input type="number" name="max_pages" min="1" max="100" value="5"></label>
+                            <label>Interwał · godziny<input type="number" name="interval_hours" min="0" max="168" value="0"><small>0 = interwał globalny dla wybranego trybu</small></label>
+                            <label>Obszar<select name="mode"><option value="national">Cała Polska</option><option value="lodz_alerts">Lokalnie</option></select></label>
+                            <label>Miasto<input name="location" value="lodz"></label>
+                            <label>Promień · km<input type="number" name="radius_km" min="1" max="500" value="50"></label>
+                            <label>Cena od · PLN<input type="number" name="price_min" min="0" value="0"></label>
+                            <label>Cena do · PLN<input type="number" name="price_max" min="0" value="0"></label>
+                            <label>Słowa kluczowe<input name="query" maxlength="120" placeholder="ThinkPad T14"></label>
+                            <label>Filtry OLX (JSON)<input name="olx_filters_json" value="{}" placeholder='{"search[filter_example][0]":"value"}'></label>
+                        </div>
+                        <p class="form-help">Parametry filtrów kategorii są przekazywane do OLX jako query param. Przykładowy filtr TV: <code>{"search[filter_enum_size][0]":"40-49"}</code>.</p>
+                        <button class="button-primary" type="submit">Zapisz profil</button>
+                    </form>
+                    <form class="stacked-form profile-create-form" action="/settings/category/save" method="post">
+                        <h3>Dodaj kategorię OLX</h3>
+                        <p class="form-help">Wpisz ścieżkę podkategorii z publicznej strony OLX. Dodatkowe filtry wpisz jako listę nazw parametrów, które mają być dostępne dla profili tej kategorii.</p>
+                        <div class="field-grid field-grid-three">
+                            <label>ID kategorii<input name="category_id" required pattern="[A-Za-z0-9_-]{1,60}" placeholder="drukarki"></label>
+                            <label>Nazwa<input name="label" required maxlength="80" placeholder="Drukarki"></label>
+                            <label>Ścieżka OLX<input name="path" required pattern="/(?:[a-z0-9-]+/)+" placeholder="/elektronika/komputery/drukarki/"></label>
+                            <label class="filter-search">Filtry kategorii (JSON)<input name="allowed_filter_params_json" value="[]" placeholder='["search[filter_enum_example][0]"]'></label>
+                        </div>
+                        <button class="button-secondary" type="submit">Zapisz kategorię</button>
+                    </form>
                 </section>
             </div>
         </main>

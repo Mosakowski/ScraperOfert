@@ -1,6 +1,6 @@
 # Plan uniwersalizacji scrapera ofert OLX
 
-**Status:** plan produktu i techniczny kierunek po MVP TV  
+**Status:** bazowa uniwersalizacja wdrożona w kodzie; wymagane pozostaje sprawdzenie działania na kopii bazy i ograniczony przebieg OLX
 **Data analizy:** 2026-11-06  
 **Zakres planu:** wiele kategorii w serwisie OLX.pl; TV jest pierwszą kategorią, laptopy są pierwszym przykładem kolejnej kategorii.
 
@@ -132,6 +132,14 @@ Przygotować migrację SQLite, która zachowuje historię i istniejące ID ofert
 Nie zmieniać produkcyjnej bazy przy pierwszym prototypie. Najpierw test migracji na kopii i fixture'ach; backup SQLite ma być wykonany przed wdrożeniem migracji.
 
 ## 8. Etapy realizacji
+
+### Stan wdrożenia (2026-11-06)
+
+- **Wdrożone:** katalog kategorii `televisions` i `laptops`, profile wyszukiwania, migracja SQLite zachowująca dotychczasowe profile TV, budowanie URL-i po ścieżce kategorii, walidacja dozwolonych filtrów, atrybuty JSON, normalizacja i klucze porównawcze TV/laptopów/pozostałych kategorii, reguły laptopów, filtr kategorii w panelu ofert, ręczne uruchamianie profilu, profilowy interwał scheduler i ogólny eksport `oferty_olx_latest.xlsx`.
+- **Częściowe:** kategorie są konfigurowalne z panelu, ale dla kategorii spoza TV/laptopów używana jest normalizacja ogólna; pola kategorii i ich filtry wpisuje się jako JSON, nie są dynamicznie odkrywane z OLX. Scoring i alerty w większości współdzielą dotychczasowe ustawienia.
+- **Do operacyjnego potwierdzenia:** migracja na kopii prawdziwej bazy, poprawność URL-i kategorii/filtrów w bieżącym OLX, parser laptopowych detali i jakość porównań na ograniczonej próbce. Nie uruchamiano przebiegu live w ramach wdrożenia kodu.
+
+Etapy poniżej opisują cel i kryteria produktu. Punkty już wdrożone nie zwalniają z weryfikacji operacyjnej przed aktualizacją produkcyjnej bazy.
 
 ### Etap 0 — kontrakt kategorii
 

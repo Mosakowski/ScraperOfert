@@ -3,13 +3,15 @@ import sqlite3
 from typing import Dict, Any, List, Tuple
 from scraper_ofert_tv.storage import get_connection
 
-def evaluate_rules(conn: sqlite3.Connection, normalized: Dict[str, Any], detail: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+def evaluate_rules(conn: sqlite3.Connection, normalized: Dict[str, Any], detail: Dict[str, Any],
+                   category_id: str = "televisions") -> Tuple[List[str], List[str]]:
     """
     Ocenia znormalizowana oferte na podstawie regul opisowych w bazie.
     Zwraca: (lista dopasowanych nazw regul, lista podjetych akcji)
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM description_rules WHERE enabled = 1")
+    cursor.execute("""SELECT * FROM description_rules WHERE enabled = 1
+        AND (product_category_id IS NULL OR product_category_id = ?)""", (category_id,))
     rules = cursor.fetchall()
     
     full_text = f"{detail.get('full_title', '')} {detail.get('description', '')}"

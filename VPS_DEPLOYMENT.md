@@ -52,7 +52,7 @@ Jednostki uruchom i włącz do startu systemu. Obserwuj ich logi w `journalctl`.
 .venv/bin/python -m scraper_ofert_tv export excel
 ```
 
-Nie uruchamiaj tego przebiegu równocześnie z zaplanowanym skanem. Sprawdź statusy przebiegów i liczbę ofert, zadania `pending`/`failed` w `details_queue`, dane porównawcze oraz plik `output/oferty_tv_latest.xlsx`. Brak alertów może wynikać z progów i danych; sam w sobie nie dowodzi awarii. Blokadę OLX lub CAPTCHA traktuj jako warunek zatrzymania i diagnostyki, bez obchodzenia zabezpieczeń.
+Nie uruchamiaj tego przebiegu równocześnie z zaplanowanym skanem. Sprawdź statusy przebiegów i liczbę ofert, zadania `pending`/`failed` w `details_queue`, dane porównawcze oraz plik `output/oferty_olx_latest.xlsx` (alias zgodności TV: `oferty_tv_latest.xlsx`). Brak alertów może wynikać z progów i danych; sam w sobie nie dowodzi awarii. Blokadę OLX lub CAPTCHA traktuj jako warunek zatrzymania i diagnostyki, bez obchodzenia zabezpieczeń.
 
 Panel uruchamia skan list w osobnym procesie; pobranie detali i wycena następują w cyklu schedulera albo po ręcznym uruchomieniu powyższych komend. Zmiana interwałów w panelu wymaga restartu schedulera.
 

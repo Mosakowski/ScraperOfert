@@ -46,7 +46,7 @@ class DetailWorker:
             
             # 1. Pobieramy URL oferty
             cursor = conn.cursor()
-            cursor.execute("SELECT url, raw_price, is_free, negotiable, olx_size_bucket, raw_location, price_pln FROM offers WHERE id = ?", (offer_id,))
+            cursor.execute("SELECT url, raw_price, is_free, negotiable, olx_size_bucket, raw_location, price_pln, category_id FROM offers WHERE id = ?", (offer_id,))
             offer = cursor.fetchone()
             
             if not offer:
@@ -99,14 +99,15 @@ class DetailWorker:
                 conn.execute("UPDATE offers SET gone_at = ?, updated_at = ? WHERE id = ?", (now_iso(), now_iso(), offer_id))
             
             # 4. Normalizujemy dane
-            normalized = normalize_offer_data(dict(offer), detail, specs_cache)
+            category_id = offer["category_id"] or "televisions"
+            normalized = normalize_offer_data(dict(offer), detail, specs_cache, category_id=category_id)
             
             # 5. Tworzymy klucz i confidence
-            comp_key = generate_comparable_key(normalized)
-            confidence = calculate_confidence(normalized, comp_key)
+            comp_key = generate_comparable_key(normalized, category_id=category_id)
+            confidence = calculate_confidence(normalized, comp_key, category_id=category_id)
             
             # 6. Reguly opisowe
-            matched_rules, actions = evaluate_rules(conn, normalized, detail)
+            matched_rules, actions = evaluate_rules(conn, normalized, detail, category_id=category_id)
             system_status = None
             if "reject" in actions:
                 system_status = "rejected"
@@ -121,7 +122,7 @@ class DetailWorker:
                 SET seller_name = ?, seller_profile_url = ?,
                     brand = ?, model = ?, technology = ?, resolution = ?, detected_size_inches = ?,
                     city = ?, district = ?, comparable_key = ?, comparison_confidence = ?, 
-                    normalization_diagnostics_json = ?,
+                    normalization_diagnostics_json = ?, attributes_json = ?,
                     system_status = COALESCE(?, system_status), updated_at = ?, last_detail_fetch_at = ?
                 WHERE id = ?
             """, (
@@ -130,18 +131,19 @@ class DetailWorker:
                 normalized.get('resolution'), normalized.get('size_inches'),
                 normalized.get('city'), normalized.get('district'),
                 comp_key, str(confidence), json.dumps(normalized.get('diagnostics', {})),
+                json.dumps(normalized.get('attributes', {}), ensure_ascii=False),
                 system_status, now, now, offer_id
             ))
             
             # Create snapshot for descriptive info
             conn.execute("""
                 INSERT INTO offer_snapshots
-                (offer_id, scan_mode, title, description, params_json, photo_count, main_photo_url, scraped_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (offer_id, scan_mode, title, description, params_json, photo_count, main_photo_url, scraped_at, category_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 offer_id, "detail_fetch", detail.get('full_title'), detail.get('description'),
                 json.dumps(detail.get('params', {})), detail.get('images_count'),
-                detail.get('main_image_url'), now
+                detail.get('main_image_url'), now, category_id
             ))
             
             # Zapisz dopasowane reguly

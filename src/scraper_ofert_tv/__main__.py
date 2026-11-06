@@ -27,7 +27,8 @@ def run_show_config(args):
         "national_scan": service.get_national_scan_settings(),
         "lodz_alerts": service.get_lodz_alerts_settings(),
         "rate_limit": service.get_rate_limit_settings(),
-        "size_profiles": service.get_size_profiles()
+        "categories": service.get_categories(),
+        "search_profiles": service.get_search_profiles()
     }
     print(json.dumps(config, indent=2, ensure_ascii=False))
 
@@ -108,7 +109,7 @@ def main():
     # T204, T205, T206 scan
     parser_scan = subparsers.add_parser("scan", help="Uruchamia proces skanowania")
     parser_scan.add_argument("--mode", required=True, choices=["national", "lodz_alerts"], help="Tryb skanowania")
-    parser_scan.add_argument("--profile", help="Opcjonalny ID profilu rozmiaru")
+    parser_scan.add_argument("--profile", help="Opcjonalny ID profilu wyszukiwania")
 
     # T207 export excel
     parser_export = subparsers.add_parser("export", help="Eksportuje raporty")
@@ -133,7 +134,7 @@ def main():
 
     # diagnose-olx
     parser_diag = subparsers.add_parser("diagnose-olx", help="Uruchamia diagnostyke live-scrapingu OLX")
-    parser_diag.add_argument("--profile", required=True, help="Opcjonalny ID profilu rozmiaru, np. 40_49")
+    parser_diag.add_argument("--profile", required=True, help="ID profilu wyszukiwania do diagnostyki")
     parser_diag.add_argument("--backend", choices=["httpx", "playwright"], default="httpx", help="Backend pobierania (httpx lub playwright)")
 
     # scheduler

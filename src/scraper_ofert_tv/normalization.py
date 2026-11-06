@@ -5,7 +5,9 @@ import json
 # Popularne marki
 BRANDS = [
     "samsung", "lg", "sony", "philips", "panasonic", "tcl", "hisense", "toshiba", 
-    "sharp", "manta", "kiano", "xiaomi", "blaupunkt", "thomson", "telefunken", "jvc", "hitachi"
+    "sharp", "manta", "kiano", "xiaomi", "blaupunkt", "thomson", "telefunken", "jvc", "hitachi",
+    "apple", "lenovo", "dell", "hp", "hewlett-packard", "asus", "acer", "msi", "gigabyte",
+    "razer", "huawei", "microsoft", "dynabook", "fujitsu", "medion", "realme"
 ]
 
 # Technologie
@@ -14,7 +16,12 @@ TECH = ["oled", "qled", "miniled", "microled", "nanocell", "led", "lcd", "plasma
 # Rozdzielczosci
 RES = ["8k", "4k", "uhd", "fhd", "full hd", "fullhd", "hd ready", "hd", "1080p", "720p"]
 
-def normalize_offer_data(offer: Dict[str, Any], detail: Dict[str, Any], specs_cache: Dict[Tuple[str, str], Dict[str, Any]] = None) -> Dict[str, Any]:
+def normalize_offer_data(offer: Dict[str, Any], detail: Dict[str, Any], specs_cache: Dict[Tuple[str, str], Dict[str, Any]] = None,
+                        category_id: str = "televisions") -> Dict[str, Any]:
+    if category_id == "laptops":
+        return _normalize_laptop_offer(offer, detail)
+    if category_id != "televisions":
+        return _normalize_generic_offer(offer, detail, category_id)
     normalized = {}
     diagnostics = {}
     
@@ -75,6 +82,119 @@ def normalize_offer_data(offer: Dict[str, Any], detail: Dict[str, Any], specs_ca
         
     return normalized
 
+
+def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
+    params = detail.get("params") or {}
+    title = detail.get("full_title") or offer.get("title") or ""
+    description = detail.get("description") or ""
+    full_text = f"{title} {description}"
+    lower = full_text.lower()
+    brand_param = next((str(v) for k, v in params.items() if k.lower() in ("marka", "producent")), "")
+    brand, brand_source = _normalize_brand(brand_param, title, description)
+
+    model_param = next((str(v) for k, v in params.items() if k.lower() in ("model", "seria")), "")
+    if model_param:
+        model = model_param.strip()
+        model_source = "params"
+    else:
+        model_match = re.search(r"\b(?:thinkpad|thinkbook|ideapad|latitude|precision|inspiron|xps|probook|elitebook|pavilion|zenbook|vivobook|tuf|rog|legion|ideapad|macbook(?:\s+(?:air|pro))?|aspire|swift|travelmate|toughbook|predator|nitro|surface\s+laptop)\s*[a-z0-9 .-]{0,18}", title, re.I)
+        model = re.sub(r"\s+", " ", model_match.group(0)).strip(" -") if model_match else None
+        model_source = "title" if model else "none"
+
+    def param_value(keys):
+        return next((str(v).strip() for k, v in params.items() if k.lower() in keys and str(v).strip()), None)
+
+    cpu = param_value({"procesor", "model procesora", "cpu"})
+    gpu = param_value({"karta graficzna", "układ graficzny", "uklad graficzny", "gpu"})
+    ram_raw = param_value({"pamięć ram", "pamiec ram", "ram", "wielkość pamięci ram", "wielkosc pamieci ram"})
+    storage_raw = param_value({"dysk", "pojemność dysku", "pojemnosc dysku", "typ dysku", "storage"})
+    screen_raw = param_value({"przekątna ekranu", "przekatna ekranu", "wielkość ekranu", "wielkosc ekranu", "rozmiar ekranu"})
+
+    if not cpu:
+        m = re.search(r"\b((?:intel\s+)?core\s+i[3579]-?\w+|core\s+ultra\s+[579]\s+\w+|ryzen\s+[3579]\s+\w+|apple\s+m[1-5](?:\s+(?:pro|max|ultra))?)\b", lower, re.I)
+        cpu = m.group(1) if m else None
+    if not gpu:
+        m = re.search(r"\b(rtx\s?\d{3,4}(?:\s?ti)?|gtx\s?\d{3,4}(?:\s?ti)?|radeon\s?(?:rx\s?)?\d{3,4}|arc\s?a\d{3})\b", lower, re.I)
+        gpu = m.group(1) if m else None
+    ram_gb = None
+    ram_source = ram_raw or ""
+    if ram_raw:
+        m = re.search(r"\d{1,3}", ram_raw)
+        ram_gb = int(m.group()) if m else None
+    if ram_gb is None:
+        m = re.search(r"\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\s*(?:ram|d\d|lpddr)?\b|\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\b.{0,10}\bram\b", lower)
+        ram_gb = int(next(x for x in m.groups() if x)) if m else None
+        ram_source = "title" if m else "none"
+    storage_gb = None
+    if storage_raw:
+        m = re.search(r"(\d+(?:[.,]\d+)?)\s*(tb|gb)", storage_raw, re.I)
+        if m:
+            storage_gb = int(float(m.group(1).replace(",", ".")) * (1024 if m.group(2).lower() == "tb" else 1))
+    if storage_gb is None:
+        m = re.search(r"\b(128|256|512|1000|1024|2000|2048|4000|4096)\s*(gb|tb)\b.{0,12}\b(ssd|hdd|nvme)?\b|\b(ssd|nvme)\s*(\d{3,4})\s*(gb|tb)\b", lower, re.I)
+        if m:
+            value = m.group(1) or m.group(5)
+            unit = m.group(2) or m.group(6)
+            storage_gb = int(value) * (1024 if unit and unit.lower() == "tb" else 1)
+    screen_inches = None
+    screen_candidate = screen_raw or ""
+    if not screen_candidate:
+        m = re.search(r"\b(11(?:\.6)?|12(?:\.\d)?|13(?:\.\d)?|14(?:\.\d)?|15(?:\.\d)?|16(?:\.\d)?|17(?:\.\d)?|18(?:\.\d)?)\s*(?:in|inch|cala|cali|\")", lower)
+        screen_candidate = m.group(1) if m else ""
+    if screen_candidate:
+        m = re.search(r"\d{2}(?:[.,]\d)?", screen_candidate)
+        if m:
+            screen_inches = int(round(float(m.group().replace(",", ".")) * 10))
+
+    raw_price = detail.get("raw_price") or offer.get("raw_price") or ""
+    price, is_free, negotiable = _normalize_price(raw_price)
+    city, district = _normalize_location(offer.get("raw_location", ""))
+    attributes = {
+        "cpu": cpu,
+        "gpu": gpu,
+        "ram_gb": ram_gb,
+        "storage_gb": storage_gb,
+        "screen_inches_tenths": screen_inches,
+        "condition": param_value({"stan", "condition"}),
+        "product_kind": "laptop",
+    }
+    attrs = {k: v for k, v in attributes.items() if v is not None}
+    return {
+        "price_pln": price if price is not None else offer.get("price_pln"),
+        "is_free": int(is_free), "negotiable": int(negotiable),
+        "brand": brand, "model_name": model, "technology": None, "resolution": None,
+        "size_inches": None, "native_olx_bucket": None, "city": city, "district": district,
+        "has_remote": 0, "has_stand": 0, "has_box": 0, "pickup_only": 0, "delivery_possible": 0,
+        "attributes": attrs,
+        "diagnostics": {"brand_source": brand_source, "model_source": model_source,
+                        "category": "laptops", "cpu_source": "params" if cpu and cpu == param_value({"procesor", "model procesora", "cpu"}) else ("title" if cpu else "none"),
+                        "ram_source": "params" if ram_raw else ram_source},
+    }
+
+
+def _normalize_generic_offer(offer: Dict[str, Any], detail: Dict[str, Any], category_id: str) -> Dict[str, Any]:
+    params = detail.get("params") or {}
+    title = detail.get("full_title") or offer.get("title") or ""
+    description = detail.get("description") or ""
+    raw_price = detail.get("raw_price") or offer.get("raw_price") or ""
+    price, is_free, negotiable = _normalize_price(raw_price)
+    brand_param = next((str(v) for k, v in params.items() if k.lower() in ("marka", "producent", "manufacturer")), "")
+    brand, brand_source = _normalize_brand(brand_param, title, description)
+    model_param = next((str(v) for k, v in params.items() if k.lower() in ("model", "nazwa modelu")), "")
+    model = model_param.strip() or title.strip() or None
+    attributes = {re.sub(r"[^a-z0-9]+", "_", str(key).lower()).strip("_"): str(value).strip()
+                  for key, value in params.items() if str(value).strip()}
+    city, district = _normalize_location(offer.get("raw_location", ""))
+    return {
+        "price_pln": price if price is not None else offer.get("price_pln"),
+        "is_free": int(is_free), "negotiable": int(negotiable), "brand": brand,
+        "model_name": model, "technology": None, "resolution": None,
+        "size_inches": None, "native_olx_bucket": None, "city": city, "district": district,
+        "has_remote": 0, "has_stand": 0, "has_box": 0, "pickup_only": 0, "delivery_possible": 0,
+        "attributes": attributes,
+        "diagnostics": {"category": category_id, "brand_source": brand_source,
+                        "model_source": "params" if model_param else "title_fallback"},
+    }
 def enrich_with_model_specs(normalized: Dict[str, Any], diagnostics: Dict[str, Any], specs_cache: Dict[Tuple[str, str], Dict[str, Any]]) -> None:
     brand = normalized.get('brand')
     model = normalized.get('model_name')

@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import shutil
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 from openpyxl import Workbook
@@ -11,8 +13,9 @@ def export_to_excel(conn: sqlite3.Connection, output_dir: Path):
     
     # Tworzymy plik
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    latest_file = output_dir / "oferty_tv_latest.xlsx"
-    archive_file = output_dir / f"oferty_tv_{timestamp}.xlsx"
+    latest_file = output_dir / "oferty_olx_latest.xlsx"
+    archive_file = output_dir / f"oferty_olx_{timestamp}.xlsx"
+    legacy_tv_file = output_dir / "oferty_tv_latest.xlsx"
     
     wb = Workbook()
     
@@ -51,6 +54,7 @@ def export_to_excel(conn: sqlite3.Connection, output_dir: Path):
         
     wb.save(latest_file)
     wb.save(archive_file)
+    shutil.copy2(latest_file, legacy_tv_file)
     
     # Zapisujemy log do bazy
     cursor = conn.cursor()
@@ -172,19 +176,22 @@ def _write_lodz_candidates(conn, ws):
         ])
 
 def _write_offers(conn, ws):
-    headers = ["ID", "Status", "Tytuł", "Cena (PLN)", "Miasto", "Rozmiar", "Marka", "Model", "Klucz", "Pewność", "URL"]
+    headers = ["ID", "Kategoria", "Status", "Tytuł", "Cena (PLN)", "Miasto", "Parametry", "Marka", "Model", "Klucz", "Pewność", "URL"]
     ws.append(headers)
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, system_status, title, price_pln, city, detected_size_inches, brand, model, comparable_key, comparison_confidence, url
-        FROM offers
+        SELECT o.id, c.label AS category, o.system_status, o.title, o.price_pln, o.city,
+               o.detected_size_inches, o.attributes_json, o.brand, o.model, o.comparable_key,
+               o.comparison_confidence, o.url
+        FROM offers o LEFT JOIN categories c ON c.id=o.category_id
         ORDER BY id DESC LIMIT 5000
     """)
     for r in cursor.fetchall():
         ws.append([
-            r['id'], r['system_status'], r['title'], r['price_pln'], r['city'], 
-            r['detected_size_inches'], r['brand'], r['model'], r['comparable_key'], r['comparison_confidence'], r['url']
+            r['id'], r['category'], r['system_status'], r['title'], r['price_pln'], r['city'],
+            r['attributes_json'] or (f"{r['detected_size_inches']} cali" if r['detected_size_inches'] else ""),
+            r['brand'], r['model'], r['comparable_key'], r['comparison_confidence'], r['url']
         ])
 
 def _write_market(conn, ws):

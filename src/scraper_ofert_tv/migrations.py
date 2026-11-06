@@ -109,5 +109,111 @@ def apply_migrations(db_path: Path = None):
             (2, "add_model_specs", now_iso())
         )
         conn.commit()
+
+    # Migration 3: categories, reusable monitoring profiles and typed attributes.
+    cursor.execute("SELECT 1 FROM schema_migrations WHERE version=3")
+    if not cursor.fetchone():
+        def add_column(table: str, column: str, definition: str):
+            columns = {row[1] for row in cursor.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+        cursor.executescript("""
+            CREATE TABLE IF NOT EXISTS categories (
+              id TEXT PRIMARY KEY,
+              label TEXT NOT NULL,
+              path TEXT NOT NULL,
+              domain TEXT NOT NULL,
+              allowed_filter_params_json TEXT NOT NULL DEFAULT '[]',
+              enabled INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS search_profiles (
+              id TEXT PRIMARY KEY,
+              category_id TEXT NOT NULL,
+              label TEXT NOT NULL,
+              enabled INTEGER NOT NULL DEFAULT 1,
+              filters_json TEXT NOT NULL DEFAULT '{}',
+              max_pages INTEGER NOT NULL DEFAULT 5,
+              interval_hours INTEGER NOT NULL DEFAULT 0,
+              priority INTEGER NOT NULL DEFAULT 100,
+              legacy_size_profile_id TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY(category_id) REFERENCES categories(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_search_profiles_category_enabled
+              ON search_profiles(category_id, enabled, priority);
+        """)
+        add_column("offers", "category_id", "TEXT NOT NULL DEFAULT 'televisions'")
+        add_column("offers", "attributes_json", "TEXT NOT NULL DEFAULT '{}'")
+        add_column("offer_snapshots", "category_id", "TEXT NOT NULL DEFAULT 'televisions'")
+        add_column("comparable_groups", "category_id", "TEXT NOT NULL DEFAULT 'televisions'")
+        add_column("description_rules", "product_category_id", "TEXT")
+        add_column("search_profile_runs", "search_profile_id", "TEXT")
+        add_column("size_profiles", "category_id", "TEXT NOT NULL DEFAULT 'televisions'")
+        add_column("model_specs", "product_category_id", "TEXT NOT NULL DEFAULT 'televisions'")
+        add_column("model_specs", "attributes_json", "TEXT NOT NULL DEFAULT '{}'")
+
+        from scraper_ofert_tv.categories import CATEGORY_DEFINITIONS
+        now = now_iso()
+        for category_id, definition in CATEGORY_DEFINITIONS.items():
+            cursor.execute("""
+                INSERT OR IGNORE INTO categories
+                (id, label, path, domain, allowed_filter_params_json, enabled, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """, (category_id, definition["label"], definition["path"], definition["domain"],
+                  json.dumps(definition["allowed_filter_params"]), now, now))
+
+        # Keep the old size profile IDs and history intact; expose each as a reusable TV search profile.
+        tv_profiles = cursor.execute("SELECT * FROM size_profiles ORDER BY sort_order").fetchall()
+        for row in tv_profiles:
+            filters = {"olx_filters": {"search[filter_enum_size][0]": row["olx_size_value"]}}
+            cursor.execute("UPDATE size_profiles SET category_id='televisions' WHERE id=?", (row["id"],))
+            cursor.execute("""
+                INSERT OR IGNORE INTO search_profiles
+                (id, category_id, label, enabled, filters_json, max_pages, interval_hours, priority,
+                 legacy_size_profile_id, created_at, updated_at)
+                VALUES (?, 'televisions', ?, ?, ?, 25, 0, ?, ?, ?, ?)
+            """, (row["id"], row["label"], row["enabled"], json.dumps(filters),
+                  row["sort_order"], row["id"], now, now))
+
+        # A legacy lookup row preserves the NOT NULL size_profile_id foreign key in old scan history.
+        cursor.execute("""
+            INSERT OR IGNORE INTO size_profiles
+            (id, label, olx_size_value, min_inches, max_inches, enabled, sort_order, created_at, updated_at, category_id)
+            VALUES ('laptops_all', 'Wszystkie laptopy', '', NULL, NULL, 1, 100, ?, ?, 'laptops')
+        """, (now, now))
+        cursor.execute("""
+            INSERT OR IGNORE INTO search_profiles
+            (id, category_id, label, enabled, filters_json, max_pages, interval_hours, priority,
+             legacy_size_profile_id, created_at, updated_at)
+            VALUES ('laptops_all', 'laptops', 'Laptopy · cała Polska', 1, '{}', 5, 0, 100,
+                    'laptops_all', ?, ?)
+        """, (now, now))
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_offers_category_status ON offers(category_id, system_status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_offers_category_comparable ON offers(category_id, comparable_key)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_category ON offer_snapshots(category_id, scraped_at)")
+        cursor.execute("UPDATE offer_snapshots SET category_id='televisions'")
+        cursor.execute("UPDATE comparable_groups SET category_id='televisions'")
+        cursor.execute("UPDATE description_rules SET product_category_id='televisions'")
+        laptop_rules = [
+            ("laptop_parts_exclude", "Części lub akcesoria zamiast laptopa", ["bateria do laptopa", "matryca do laptopa", "klawiatura do laptopa", "obudowa do laptopa", "części do laptopa", "zasilacz do laptopa"], "reject", -100.0),
+            ("laptop_damaged", "Uszkodzony laptop", ["uszkodzony laptop", "na części", "nie działa", "nie uruchamia się", "uszkodzona matryca"], "reject", -70.0),
+        ]
+        for rule_id, label, patterns, action, score_delta in laptop_rules:
+            cursor.execute("""
+                INSERT OR IGNORE INTO description_rules
+                (id, enabled, category, severity, label, applies_to, match_mode, patterns_json,
+                 score_delta, action, product_category_id, created_at, updated_at)
+                VALUES (?, 1, 'red_flag', 'high', ?, 'title,description', 'phrase', ?, ?, ?, 'laptops', ?, ?)
+            """, (rule_id, label, json.dumps(patterns, ensure_ascii=False), score_delta, action, now, now))
+        cursor.execute("""
+            INSERT INTO schema_migrations (version, name, applied_at)
+            VALUES (3, 'add_product_categories_and_search_profiles', ?)
+        """, (now,))
+        conn.commit()
         
     conn.close()

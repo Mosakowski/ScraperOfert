@@ -1,6 +1,6 @@
 # DB Schema - Scraper Ofert TV
 
-Ten dokument opisuje proponowany schemat SQLite dla MVP. SQLite jest zrodlem prawdy, a Excel jest raportem generowanym z bazy.
+Ten dokument opisuje schemat SQLite aplikacji. SQLite jest źródłem prawdy, a Excel jest raportem generowanym z bazy. Wersja migracji 3 dodaje katalog `categories`, `search_profiles`, kategorię i elastyczne atrybuty do ofert oraz identyfikator profilu w historii przebiegów. `size_profiles` pozostaje tabelą zgodności dla historii TV.
 
 Typy sa opisane pod SQLite:
 
@@ -54,9 +54,21 @@ Przykladowe klucze:
 - `scheduler`
 - `excel_export`
 
-## 4. `size_profiles`
+## 4. `categories` i `search_profiles`
 
-Profile wyszukiwania roznia sie tylko rozmiarem TV.
+`categories` przechowuje ścieżkę OLX, etykietę, domenę normalizacji oraz dozwolone parametry filtrów URL. `search_profiles` przechowuje kategorię, kryteria JSON, limit stron, włączenie i opcjonalny interwał godzinowy. Profile migracji TV zachowują poprzednie ID; profil `laptops_all` jest seedem laptopów.
+
+```sql
+categories(id, label, path, domain, allowed_filter_params_json, enabled, created_at, updated_at)
+search_profiles(id, category_id, label, enabled, filters_json, max_pages, interval_hours, priority,
+                legacy_size_profile_id, created_at, updated_at)
+```
+
+`filters_json` może zawierać `mode`, `location`, `radius_km`, `price_min`, `price_max`, `query` oraz słownik `olx_filters`.
+
+## 5. `size_profiles` (zgodność wsteczna)
+
+Tabela zachowuje istniejące profile TV, do których odwołuje się historia. Nowe profile zapisuje się w `search_profiles`. Kolumna `category_id` oznacza kategorię rekordu.
 
 ```sql
 CREATE TABLE size_profiles (
@@ -74,7 +86,7 @@ CREATE TABLE size_profiles (
 
 Przykladowe `id`: `under_30`, `30_39`, `40_49`, `50_59`, `60_69`, `70_79`, `over_80`.
 
-## 5. `description_rules`
+## 6. `description_rules`
 
 Reguly opisowe edytowane w panelu.
 
@@ -90,6 +102,7 @@ CREATE TABLE description_rules (
   patterns_json TEXT NOT NULL,
   score_delta REAL NOT NULL DEFAULT 0,
   action TEXT NOT NULL,
+  product_category_id TEXT,
   notes TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -100,7 +113,7 @@ Kategorie: `red_flag`, `warning`, `positive`, `exclude`, `info`.
 
 Akcje: `flag`, `reject`, `boost`, `info`.
 
-## 6. `scoring_settings`
+## 7. `scoring_settings`
 
 Progi scoringu i alertow.
 
@@ -118,7 +131,7 @@ Przykladowe `id`:
 - `lodz_alerts`
 - `market_reference`
 
-## 7. `search_runs`
+## 8. `search_runs`
 
 Jeden przebieg skanu.
 
@@ -148,7 +161,7 @@ CREATE TABLE search_runs (
 
 `mode`: `national`, `lodz_alerts`, `manual_export`, `recalc_market`.
 
-## 8. `search_profile_runs`
+## 9. `search_profile_runs`
 
 Przebieg pojedynczego profilu rozmiaru w ramach skanu.
 
@@ -157,6 +170,7 @@ CREATE TABLE search_profile_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   search_run_id INTEGER NOT NULL,
   size_profile_id TEXT NOT NULL,
+  search_profile_id TEXT,
   mode TEXT NOT NULL,
   status TEXT NOT NULL,
   search_url TEXT NOT NULL,
@@ -178,7 +192,7 @@ CREATE TABLE search_profile_runs (
 
 Mozliwe statusy: `running`, `success`, `partial`, `failed`, `temporarily_blocked`, `skipped`.
 
-## 9. `offers`
+## 10. `offers`
 
 Aktualny stan oferty.
 
@@ -212,6 +226,8 @@ CREATE TABLE offers (
   technology TEXT,
   resolution TEXT,
   comparable_key TEXT,
+  category_id TEXT NOT NULL DEFAULT 'televisions',
+  attributes_json TEXT NOT NULL DEFAULT '{}',
   comparison_confidence TEXT,
   system_status TEXT NOT NULL DEFAULT 'new',
   user_decision TEXT NOT NULL DEFAULT 'none',
@@ -275,7 +291,7 @@ Decyzje uzytkownika:
 - `bad_match`
 - `not_profitable`
 
-## 10. `offer_snapshots`
+## 11. `offer_snapshots`
 
 Historia danych z kolejnych skanow.
 
@@ -287,6 +303,7 @@ CREATE TABLE offer_snapshots (
   search_profile_run_id INTEGER,
   scan_mode TEXT NOT NULL,
   size_profile_id TEXT,
+  category_id TEXT NOT NULL DEFAULT 'televisions',
   listing_page_url TEXT,
   listing_page_number INTEGER,
   listing_position INTEGER,

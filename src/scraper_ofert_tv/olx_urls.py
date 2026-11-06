@@ -12,16 +12,19 @@ def build_olx_search_url(
     seller_type: str = "private",
     condition: str = "used",
     size_filter: str = None,
-    page: int = 1
+    page: int = 1,
+    category_path: str = None,
+    olx_filters: dict = None,
+    query: str = None
 ) -> str:
     """
     Buduje URL wyszukiwania na OLX na podstawie podanych kryteriow.
     """
     
     # Budowa sciezki glownej
-    path = CATEGORY_PATH
+    path = category_path or CATEGORY_PATH
     if mode == "lodz_alerts" and location:
-        path = f"/elektronika/tv/telewizory/{location}/"
+        path = f"{path.rstrip('/')}/{location.strip('/')}/"
 
     url = f"{BASE_URL}{path}"
     
@@ -42,9 +45,15 @@ def build_olx_search_url(
         # W nowszych wersjach OLX uzywa tez owner_type, ale PRD mowi private_business
         params["search[private_business]"] = "private"
         
-    # Rozmiar TV z profilu
+    # Kategoriowe parametry OLX (np. native TV size filter).
     if size_filter:
         params["search[filter_enum_size][0]"] = size_filter
+
+    if query:
+        params["q"] = query
+
+    # Definitions validate these names against the selected OLX category.
+    params.update(olx_filters or {})
         
     # Promien szukania
     if mode == "lodz_alerts" and radius_km:

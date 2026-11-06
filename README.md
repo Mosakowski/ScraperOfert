@@ -2,7 +2,7 @@
 
 Zaawansowany scraper ofert telewizorow oparty na lokalnej architekturze zintegrowanej z baza SQLite. Pozwala na automatyczne wyszukiwanie ofert na terenie calego kraju, grupowanie ich pod katem modeli (tworzac swoista gielde cenowa) oraz wypatrywanie lokalnych, łódzkich okazji zakupowych dla zysku (flipowanie).
 
-Docelowym produktem jest uniwersalny system dla różnych kategorii ofert. Obecna wersja obsługuje telewizory z OLX jako pierwszą kategorię. Plan rozszerzenia jest w [PRD.md](PRD.md) i [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); wybór innych kategorii nie jest jeszcze zaimplementowany.
+Docelowym produktem jest uniwersalny system dla różnych kategorii ofert. Aplikacja ma wspólny katalog kategorii i profile wyszukiwania; gotowe definicje obejmują telewizory oraz laptopy. Normalizacja telewizorów i laptopów jest kategoriowa, a pozostałe dodane kategorie korzystają z normalizacji ogólnej. Profil zapisuje kategorię, ścieżkę OLX, lokalizację, ceny, słowa kluczowe, filtry URL, limit stron i opcjonalny interwał.
 
 Szczegółowa analiza obecnego kodu i plan uniwersalizacji: [PLAN_UNIWERSALIZACJI.md](PLAN_UNIWERSALIZACJI.md).
 
@@ -21,10 +21,14 @@ Szczegółowa analiza obecnego kodu i plan uniwersalizacji: [PLAN_UNIWERSALIZACJ
    # py -m scraper_ofert_tv migrate
    ```
 
+## Profile kategorii i przepływ pracy
+
+W panelu `/settings` można włączyć profile TV/laptopów, dodać profil dla kategorii, ustawić jego limity oraz uruchomić go ręcznie. Kategoria może być dodana przez podanie ścieżki publicznej podkategorii OLX. Dodatkowe filtry kategorii przekazuje się w JSON jako parametry URL; ich nazwy muszą najpierw znaleźć się na liście dozwolonych filtrów tej kategorii. W `/offers` można filtrować wyniki po kategorii. Każdy aktywny profil ma osobny cykl scheduler: interwał profilu, a dla wartości `0` interwał globalny odpowiedni dla jego trybu (national albo Łódź). Cykl profilu wykonuje skan, pobieranie detali, wycenę, alerty i eksport.
+
 ## Przeplyw pracy (Workflow)
 Sugerowany i w pełni działający na czystej bazie danych workflow (od bazy, az po raport Excela):
 1. **national**: `python -m scraper_ofert_tv scan --mode national` (pobiera linki ogolnopolskie).
-2. **process-details**: `python -m scraper_ofert_tv process-details` (techniczna komenda, ktora 'konsumuje' oferty z kolejki, sciaga z nich detale jak konkretny model czy uszkodzenia).
+2. **process-details**: `python -m scraper_ofert_tv process-details` (techniczna komenda, ktora 'konsumuje' oferty z kolejki, sciaga z nich detale jak parametry danego produktu).
 3. **recalc-market**: `python -m scraper_ofert_tv recalc-market` (najwazniejszy element: agreguje pobrane oferty i wystawia mediany na dany klucz porownawczy; pod spodem uruchamia rowniez logiczny *scoring* oraz *alerty Lodz*).
 4. **lodz_alerts**: `python -m scraper_ofert_tv scan --mode lodz_alerts` (pobiera baze lokalna Lodzi, by nastepnie 'process-details' i 'recalc-market' wylapaly ja jako szybki alert).
 5. **export excel**: `python -m scraper_ofert_tv export excel` (generuje estetyczny plik w folderze `output/`).
@@ -34,6 +38,7 @@ Aplikacja udostępnia interfejs pod komendą `python -m scraper_ofert_tv <komend
 
 - `migrate` - buduje schemat bazy w `data/offers.sqlite`
 - `scan --mode [national|lodz_alerts]` - listuje wyniki i sciaga kafelki do bazy
+- `scan --mode national --profile laptopy_all` - uruchamia wskazany profil wyszukiwania; ID profilu można sprawdzić w panelu lub `show-config`
 - `process-details --limit 50` - wyciaga detale oczekujacych ofert. Uzywana jako techniczny worker kolejkowy (odseparowuje liste linkow od blokujacego rate-limit pobierania strony przedmiotu).
 - `recalc-market` - przelicza grupowanie cen i aktywuje modul oceny.
 - `export excel` - buduje fizycznego excela.
@@ -55,3 +60,5 @@ Zawsze nalezy wykonywac kopię przed poważnymi zmianami. Baza `data/offers.sqli
 
 ## Definicja MVP
 MVP to Minimal Viable Product - scraper obsluguje wstepne testy wyceny, nie zaciaga danych wrazliwych, jest rate-limitowany by nie spamowac OLX-a, a reguly mozna testowac za pomoca modulu CLI badz wpisow JSON/bazy SQLite. Panel webowy wyswietla surowe agregaty dzialan.
+
+Obsługa kolejnej kategorii wymaga sprawdzenia jej ścieżki OLX i nazw filtrów, dodania definicji kategorii oraz dostrojenia normalizatora, kluczy porównawczych i reguł, gdy ogólny wariant nie wystarcza. Samo dodanie ścieżki daje pobieranie wspólnych pól i parametrów, ale nie gwarantuje trafnej wyceny produktu.

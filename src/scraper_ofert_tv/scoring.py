@@ -30,15 +30,17 @@ def score_offers(conn: sqlite3.Connection):
         sys_status = offer['system_status']
         
         from scraper_ofert_tv.comparison import generate_comparable_keys, get_strategy_cap, calculate_normalization_confidence
+        category_id = offer["category_id"] or "televisions"
         normalized = {
             'brand': offer['brand'],
             'model_name': offer['model'],
             'technology': offer['technology'],
             'resolution': offer['resolution'],
             'size_inches': offer['detected_size_inches'],
-            'native_olx_bucket': offer['olx_size_bucket']
+            'native_olx_bucket': offer['olx_size_bucket'],
+            'attributes': json.loads(offer["attributes_json"] or "{}")
         }
-        keys = generate_comparable_keys(normalized)
+        keys = generate_comparable_keys(normalized, category_id=category_id)
         
         cursor.execute("SELECT value_json FROM settings WHERE key = 'scoring_settings'")
         setting_row = cursor.fetchone()
@@ -80,7 +82,7 @@ def score_offers(conn: sqlite3.Connection):
         market_sample_confidence = float(best_market['market_confidence']) if best_market else 0.0
         
         strategy_cap = get_strategy_cap(best_strategy) if best_strategy else 0.4
-        norm_conf = calculate_normalization_confidence(normalized)
+        norm_conf = calculate_normalization_confidence(normalized, category_id=category_id)
         
         final_comparison_confidence = min(market_sample_confidence, strategy_cap, norm_conf)
         
