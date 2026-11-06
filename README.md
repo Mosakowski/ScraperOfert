@@ -4,6 +4,8 @@ Zaawansowany scraper ofert telewizorow oparty na lokalnej architekturze zintegro
 
 Docelowym produktem jest uniwersalny system dla różnych kategorii ofert. Obecna wersja obsługuje telewizory z OLX jako pierwszą kategorię. Plan rozszerzenia jest w [PRD.md](PRD.md) i [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); wybór innych kategorii nie jest jeszcze zaimplementowany.
 
+Szczegółowa analiza obecnego kodu i plan uniwersalizacji: [PLAN_UNIWERSALIZACJI.md](PLAN_UNIWERSALIZACJI.md).
+
 ## Instalacja lokalna
 1. Pobierz repozytorium.
 2. Zbuduj i zainstaluj srodowisko w trybie deweloperskim (lub standardowym):
