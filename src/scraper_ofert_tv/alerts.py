@@ -32,6 +32,13 @@ def process_alerts(conn: sqlite3.Connection):
           AND o.gone_at IS NULL
     """)
     candidates = cursor.fetchall()
+
+    global_settings_row = cursor.execute("SELECT value_json FROM settings WHERE key = 'scoring_settings'").fetchone()
+    global_settings = json.loads(global_settings_row["value_json"]) if global_settings_row else {}
+    category_settings = {
+        row["id"]: json.loads(row["scoring_settings_json"] or "{}")
+        for row in cursor.execute("SELECT id, scoring_settings_json FROM categories").fetchall()
+    }
     
     now = now_iso()
     for cand in candidates:
@@ -46,9 +53,8 @@ def process_alerts(conn: sqlite3.Connection):
             if suppressed and suppressed > now:
                 continue # Wciaz tlumimy ten alert
                 
-        cursor.execute("SELECT value_json FROM settings WHERE key = 'scoring_settings'")
-        setting_row = cursor.fetchone()
-        scoring_settings = json.loads(setting_row['value_json']) if setting_row else {}
+        category_id = cursor.execute("SELECT category_id FROM offers WHERE id=?", (offer_id,)).fetchone()["category_id"]
+        scoring_settings = {**global_settings, **category_settings.get(category_id or "televisions", {})}
         
         # Progi z ustawien (z domyslnymi fallbackami)
         min_conf = float(scoring_settings.get("min_confidence", 0.7))

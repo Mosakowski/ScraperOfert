@@ -58,9 +58,13 @@ def run_cli_command(command: str):
     subprocess.Popen(args)
 
 @app.get("/")
-def index(request: Request):
+def index(request: Request, category: str = ""):
     conn = get_connection()
     cursor = conn.cursor()
+    categories = [dict(row) for row in cursor.execute("SELECT id,label FROM categories WHERE enabled=1 ORDER BY label").fetchall()]
+    category_ids = {row["id"] for row in categories}
+    if category not in category_ids:
+        category = ""
     
     # Alert Lodz
     cursor.execute("""
@@ -71,12 +75,22 @@ def index(request: Request):
                 ORDER BY os.scraped_at DESC, os.id DESC LIMIT 1) AS photo_url
         FROM alert_events a
         JOIN offers o ON a.offer_id = o.id
+        WHERE (? IS NULL OR o.category_id=?)
         ORDER BY a.id DESC LIMIT 20
-    """)
+    """, (category or None, category or None))
     alerts = [dict(r) for r in cursor.fetchall()]
     
     # Skan historia
-    cursor.execute("SELECT * FROM search_runs ORDER BY id DESC LIMIT 6")
+    cursor.execute("""
+        SELECT r.* FROM search_runs r
+        WHERE (? IS NULL OR EXISTS (
+            SELECT 1 FROM search_profile_runs spr
+            LEFT JOIN search_profiles p ON p.id=spr.search_profile_id
+            LEFT JOIN size_profiles sp ON sp.id=spr.size_profile_id
+            WHERE spr.search_run_id=r.id AND COALESCE(p.category_id, sp.category_id, 'televisions')=?
+        ))
+        ORDER BY r.id DESC LIMIT 6
+    """, (category or None, category or None))
     scans = [dict(r) for r in cursor.fetchall()]
     scan_status_labels = {
         "completed": "Zakończony", "success": "Sukces", "partial": "Częściowy",
@@ -85,15 +99,15 @@ def index(request: Request):
     for scan in scans:
         scan["status_label"] = scan_status_labels.get(scan["status"], scan["status"])
 
-    cursor.execute("SELECT COUNT(*) AS total FROM offers WHERE gone_at IS NULL")
+    cursor.execute("SELECT COUNT(*) AS total FROM offers WHERE gone_at IS NULL AND (? IS NULL OR category_id=?)", (category or None, category or None))
     active_offer_count = cursor.fetchone()["total"]
-    cursor.execute("SELECT COUNT(*) AS total FROM offers WHERE gone_at IS NULL AND system_status IN ('opportunity', 'candidate', 'needs_review')")
+    cursor.execute("SELECT COUNT(*) AS total FROM offers WHERE gone_at IS NULL AND system_status IN ('opportunity', 'candidate', 'needs_review') AND (? IS NULL OR category_id=?)", (category or None, category or None))
     review_offer_count = cursor.fetchone()["total"]
-    cursor.execute("SELECT COUNT(*) AS total FROM alert_events")
+    cursor.execute("SELECT COUNT(*) AS total FROM alert_events a JOIN offers o ON o.id=a.offer_id WHERE (? IS NULL OR o.category_id=?)", (category or None, category or None))
     alert_count = cursor.fetchone()["total"]
-    cursor.execute("SELECT COUNT(*) AS total FROM details_queue WHERE status IN ('pending', 'failed')")
+    cursor.execute("SELECT COUNT(*) AS total FROM details_queue q JOIN offers o ON o.id=q.offer_id WHERE q.status IN ('pending', 'failed') AND (? IS NULL OR o.category_id=?)", (category or None, category or None))
     detail_queue_count = cursor.fetchone()["total"]
-    cursor.execute("SELECT COUNT(DISTINCT comparable_key) AS total FROM market_price_references")
+    cursor.execute("SELECT COUNT(DISTINCT m.comparable_key) AS total FROM market_price_references m JOIN comparable_groups g ON g.comparable_key=m.comparable_key WHERE (? IS NULL OR g.category_id=?)", (category or None, category or None))
     market_group_count = cursor.fetchone()["total"]
     
     conn.close()
@@ -105,6 +119,8 @@ def index(request: Request):
             "request": request,
             "alerts": alerts,
             "scans": scans,
+            "categories": categories,
+            "selected_category": category,
             "active_offer_count": active_offer_count,
             "review_offer_count": review_offer_count,
             "alert_count": alert_count,
@@ -112,7 +128,7 @@ def index(request: Request):
             "market_group_count": market_group_count,
             "active_page": "dashboard",
             "page_title": "Przegląd",
-            "page_subtitle": "Rynek telewizorów · Polska / Łódź",
+            "page_subtitle": "Rynek ofert OLX · Polska / lokalnie",
         }
     )
 
@@ -346,8 +362,9 @@ def run_recalc():
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/action/export")
-def run_export():
-    run_cli_command("export excel")
+def run_export(category_id: str = Form(default="")):
+    category_arg = f" --category {category_id}" if re.fullmatch(r"[a-zA-Z0-9_-]{1,60}", category_id or "") else ""
+    run_cli_command(f"export excel{category_arg}")
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/action/decision")
@@ -421,19 +438,45 @@ def toggle_profile(profile_id: str = Form(...), enabled: int = Form(...)):
 @app.post("/settings/category/save")
 def save_category(
     category_id: str = Form(...), label: str = Form(...), path: str = Form(...),
-    allowed_filter_params_json: str = Form("[]")
+    allowed_filter_params_json: str = Form("[]"), filter_schema_json: str = Form("[]"),
+    attribute_schema_json: str = Form("[]"), scoring_settings_json: str = Form("{}")
 ):
-    if (not re.fullmatch(r"[a-zA-Z0-9_-]{1,60}", category_id or "") or len(label.strip()) > 80
+    if (not re.fullmatch(r"[a-zA-Z0-9_-]{1,60}", category_id or "") or not label.strip() or len(label.strip()) > 80
             or not re.fullmatch(r"/(?:[a-z0-9-]+/)+", path or "") or ".." in path):
         return RedirectResponse(url="/settings?error=invalid_category", status_code=303)
     try:
         filter_params = json.loads(allowed_filter_params_json or "[]")
+        filter_schema = json.loads(filter_schema_json or "[]")
+        attribute_schema = json.loads(attribute_schema_json or "[]")
+        scoring_settings = json.loads(scoring_settings_json or "{}")
         if not isinstance(filter_params, list) or any(
             not isinstance(key, str) or not re.fullmatch(r"search\[filter_[a-zA-Z0-9_:-]+\](?:\[\d+\])?", key)
             for key in filter_params
         ):
             raise ValueError("Invalid filter map")
-        SettingsService().save_category(category_id, label.strip(), path, filter_params)
+        if not isinstance(filter_schema, list) or any(
+            not isinstance(field, dict)
+            or field.get("key") not in filter_params
+            or not isinstance(field.get("label"), str) or not field.get("label", "").strip() or len(field.get("label", "")) > 100
+            or field.get("type", "text") not in {"text", "number", "select"}
+            or (field.get("type") == "select" and (not isinstance(field.get("options"), list)
+                or any(not isinstance(option, str) for option in field["options"])))
+            for field in filter_schema
+        ):
+            raise ValueError("Invalid filter schema")
+        if not isinstance(attribute_schema, list) or any(
+            not isinstance(field, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,60}", field)
+            for field in attribute_schema
+        ):
+            raise ValueError("Invalid attribute schema")
+        scoring_keys = {"min_discount", "min_profit", "min_count", "min_score", "min_confidence",
+                        "estimated_costs", "suppress_hours", "show_lodz_candidates_min_score"}
+        if not isinstance(scoring_settings, dict) or not set(scoring_settings).issubset(scoring_keys):
+            raise ValueError("Invalid category scoring settings")
+        if any(not isinstance(value, (int, float)) for value in scoring_settings.values()):
+            raise ValueError("Scoring settings must be numeric")
+        SettingsService().save_category(category_id, label.strip(), path, filter_params,
+                                        filter_schema, attribute_schema, scoring_settings)
     except (ValueError, json.JSONDecodeError):
         return RedirectResponse(url="/settings?error=invalid_category", status_code=303)
     return RedirectResponse(url="/settings", status_code=303)
@@ -456,6 +499,8 @@ def save_search_profile(
             raise ValueError("Invalid OLX filters")
         if mode not in {"national", "lodz_alerts"}:
             raise ValueError("Invalid search mode")
+        if price_min < 0 or price_max < 0 or (price_min and price_max and price_min > price_max):
+            raise ValueError("Invalid price range")
         filters = {
             "mode": mode,
             "location": location.strip()[:80] or "lodz",

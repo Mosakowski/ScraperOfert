@@ -13,36 +13,24 @@ def diagnose_olx(profile_id: str, backend: str = "httpx"):
     print(f"=== ROZPOCZYNAM DIAGNOSTYKE OLX DLA PROFILU {profile_id} (Backend: {backend}) ===")
     
     settings = SettingsService()
-    profiles = settings.get_size_profiles()
+    profiles = settings.get_search_profiles()
     profile = next((p for p in profiles if p["id"] == profile_id), None)
     if not profile:
         print(f"Blad: Nie znaleziono profilu {profile_id}")
         return
         
-    size_filter = profile.get("olx_size_value")
-    
-    scenarios = [
-        {
-            "name": "Kategoria TV bez filtrow",
-            "url": build_olx_search_url("national", price_min=None, price_max=None, condition=None, seller_type=None, size_filter=None)
-        },
-        {
-            "name": "Kategoria + rozmiar",
-            "url": build_olx_search_url("national", price_min=None, price_max=None, condition=None, seller_type=None, size_filter=size_filter)
-        },
-        {
-            "name": "Kategoria + rozmiar + cena",
-            "url": build_olx_search_url("national", price_min=300, price_max=700, condition=None, seller_type=None, size_filter=size_filter)
-        },
-        {
-            "name": "Kategoria + rozmiar + cena + used/private",
-            "url": build_olx_search_url("national", price_min=300, price_max=700, condition="used", seller_type="private", size_filter=size_filter)
-        },
-        {
-            "name": "Lodz + pelne filtry",
-            "url": build_olx_search_url("lodz_alerts", location="lodz", radius_km=50, price_min=300, price_max=700, condition="used", seller_type="private", size_filter=size_filter)
-        }
-    ]
+    filters = profile.get("filters", {})
+    mode = filters.get("mode", "national")
+    scenarios = [{
+        "name": f"Profil {profile_id} · {profile.get('category_label', profile.get('category_id'))}",
+        "url": build_olx_search_url(
+            mode=mode, location=filters.get("location", "lodz"), radius_km=filters.get("radius_km", 50),
+            price_min=filters.get("price_min"), price_max=filters.get("price_max"),
+            condition=filters.get("condition"), seller_type=filters.get("seller_type"),
+            category_path=profile.get("category_path"), olx_filters=filters.get("olx_filters", {}),
+            query=filters.get("query"),
+        )
+    }]
     
     if backend == "playwright":
         from scraper_ofert_tv.browser_scraper import BrowserScraper

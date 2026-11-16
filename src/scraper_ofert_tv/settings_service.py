@@ -53,13 +53,21 @@ class SettingsService:
     def get_scraper_settings(self):
         return self.get_setting("scraper_settings", {"fetch_backend": "httpx"})
         
-    def get_scoring_settings(self):
-        return self.get_setting("scoring_settings", {})
+    def get_scoring_settings(self, category_id: str = None):
+        settings = self.get_setting("scoring_settings", {})
+        if not category_id:
+            return settings
+        conn = get_connection(self.db_path) if self.db_path else get_connection()
+        row = conn.execute("SELECT scoring_settings_json FROM categories WHERE id=?", (category_id,)).fetchone()
+        conn.close()
+        if row and row["scoring_settings_json"]:
+            settings.update(json.loads(row["scoring_settings_json"]))
+        return settings
 
     def get_size_profiles(self):
         conn = get_connection(self.db_path) if self.db_path else get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM size_profiles ORDER BY sort_order")
+        cursor.execute("SELECT * FROM size_profiles WHERE category_id='televisions' ORDER BY sort_order")
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -74,13 +82,26 @@ class SettingsService:
         conn.close()
         for row in rows:
             row["allowed_filter_params"] = json.loads(row.pop("allowed_filter_params_json", "[]"))
+            row["filter_schema"] = json.loads(row.pop("filter_schema_json", "[]"))
+            row["attribute_schema"] = json.loads(row.pop("attribute_schema_json", "[]"))
+            row["scoring_settings"] = json.loads(row.pop("scoring_settings_json", "{}"))
         return rows
 
     def get_search_profiles(self, enabled_only: bool = False):
         conn = get_connection(self.db_path) if self.db_path else get_connection()
         query = """
             SELECT p.*, c.label AS category_label, c.path AS category_path,
-                   c.domain AS category_domain, c.allowed_filter_params_json
+                   c.domain AS category_domain, c.allowed_filter_params_json,
+                   (SELECT spr.status FROM search_profile_runs spr
+                    WHERE spr.search_profile_id=p.id ORDER BY spr.id DESC LIMIT 1) AS last_run_status,
+                   (SELECT spr.stop_reason FROM search_profile_runs spr
+                    WHERE spr.search_profile_id=p.id ORDER BY spr.id DESC LIMIT 1) AS last_stop_reason,
+                   (SELECT spr.finished_at FROM search_profile_runs spr
+                    WHERE spr.search_profile_id=p.id ORDER BY spr.id DESC LIMIT 1) AS last_run_at,
+                   (SELECT COUNT(*) FROM details_queue dq JOIN offers o ON o.id=dq.offer_id
+                    WHERE o.category_id=p.category_id AND dq.status='pending') AS pending_details,
+                   (SELECT COUNT(*) FROM details_queue dq JOIN offers o ON o.id=dq.offer_id
+                    WHERE o.category_id=p.category_id AND dq.status='failed') AS failed_details
             FROM search_profiles p JOIN categories c ON c.id = p.category_id
         """
         if enabled_only:
@@ -96,7 +117,7 @@ class SettingsService:
     def save_search_profile(self, profile_id: str, category_id: str, label: str,
                             filters: dict, max_pages: int = 5, enabled: int = 1, interval_hours: int = 0):
         conn = get_connection(self.db_path) if self.db_path else get_connection()
-        category = conn.execute("SELECT id, allowed_filter_params_json FROM categories WHERE id=? AND enabled=1", (category_id,)).fetchone()
+        category = conn.execute("SELECT id, allowed_filter_params_json, filter_schema_json FROM categories WHERE id=? AND enabled=1", (category_id,)).fetchone()
         if not category:
             conn.close()
             raise ValueError("Nieznana lub wyłączona kategoria OLX")
@@ -105,6 +126,25 @@ class SettingsService:
         if not requested.issubset(allowed):
             conn.close()
             raise ValueError("Profil używa filtra, którego nie skonfigurowano dla kategorii")
+        schema = {field.get("key"): field for field in json.loads(category["filter_schema_json"] or "[]")}
+        for key, value in (filters.get("olx_filters") or {}).items():
+            field = schema.get(key)
+            if field is None:
+                conn.close()
+                raise ValueError("Filtr profilu nie ma schematu walidacji")
+            values = value if isinstance(value, list) else [value]
+            if field.get("type") == "select" and any(item not in field.get("options", []) for item in values):
+                conn.close()
+                raise ValueError("Wartość filtra nie jest dostępna dla tej kategorii")
+            if field.get("type") == "number":
+                try:
+                    [float(item) for item in values]
+                except (TypeError, ValueError):
+                    conn.close()
+                    raise ValueError("Wartość filtra musi być liczbą")
+            if field.get("type") == "text" and any(not isinstance(item, str) or len(item) > 120 for item in values):
+                conn.close()
+                raise ValueError("Wartość filtra tekstowego jest nieprawidłowa")
         max_pages = max(1, min(int(max_pages), 100))
         interval_hours = max(0, min(int(interval_hours), 168))
         now = now_iso()
@@ -120,17 +160,26 @@ class SettingsService:
         conn.commit()
         conn.close()
 
-    def save_category(self, category_id: str, label: str, path: str, allowed_filter_params: list[str]):
+    def save_category(self, category_id: str, label: str, path: str, allowed_filter_params: list[str],
+                      filter_schema: list[dict] = None, attribute_schema: list[str] = None,
+                      scoring_settings: dict = None):
         conn = get_connection(self.db_path) if self.db_path else get_connection()
         now = now_iso()
         conn.execute("""
             INSERT INTO categories
-              (id, label, path, domain, allowed_filter_params_json, enabled, created_at, updated_at)
-            VALUES (?, ?, ?, 'generic', ?, 1, ?, ?)
+              (id, label, path, domain, allowed_filter_params_json, filter_schema_json,
+               attribute_schema_json, scoring_settings_json, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, 'generic', ?, ?, ?, ?, 1, ?, ?)
             ON CONFLICT(id) DO UPDATE SET label=excluded.label, path=excluded.path,
               allowed_filter_params_json=excluded.allowed_filter_params_json,
+              filter_schema_json=excluded.filter_schema_json,
+              attribute_schema_json=excluded.attribute_schema_json,
+              scoring_settings_json=excluded.scoring_settings_json,
               enabled=1, updated_at=excluded.updated_at
-        """, (category_id, label, path, json.dumps(allowed_filter_params), now, now))
+        """, (category_id, label, path, json.dumps(allowed_filter_params),
+              json.dumps(filter_schema or [], ensure_ascii=False),
+              json.dumps(attribute_schema or [], ensure_ascii=False),
+              json.dumps(scoring_settings or {}, ensure_ascii=False), now, now))
         conn.commit()
         conn.close()
         

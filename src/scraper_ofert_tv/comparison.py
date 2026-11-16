@@ -40,15 +40,18 @@ def _generate_laptop_comparable_keys(normalized: Dict[str, Any]) -> Dict[str, st
     clean_model = "".join(c.lower() for c in model if c.isalnum()) if model else None
     cpu = "".join(c.lower() for c in str(attrs.get("cpu", "")).split() if c.isalnum())
     gpu = "".join(c.lower() for c in str(attrs.get("gpu", "")).split() if c.isalnum())
+    gpu_type = "".join(c.lower() for c in str(attrs.get("gpu_type", "")).split() if c.isalnum())
     ram = attrs.get("ram_gb")
     storage = attrs.get("storage_gb")
+    storage_type = "".join(c.lower() for c in str(attrs.get("storage_type", "")).split() if c.isalnum())
+    condition = (attrs.get("condition") or normalized.get("condition") or "unknown").strip().lower()
     keys = {}
     if clean_model:
-        keys["A"] = f"laptops|model|{brand}|{clean_model}|{cpu}|{gpu}|{ram}|{storage}"
-        keys["B"] = f"laptops|model|{brand}|{clean_model}|{cpu}|{gpu}"
-        keys["C"] = f"laptops|model|{brand}|{clean_model}"
-    if cpu and gpu:
-        keys["D"] = f"laptops|config|{cpu}|{gpu}|{ram}"
+        keys["A"] = f"laptops|model|{brand}|{clean_model}|{cpu}|{gpu}|{gpu_type}|{ram}|{storage}|{storage_type}|{condition}"
+        keys["B"] = f"laptops|model|{brand}|{clean_model}|{cpu}|{gpu}|{gpu_type}|{condition}"
+        keys["C"] = f"laptops|model|{brand}|{clean_model}|{condition}"
+    if cpu and (gpu or gpu_type):
+        keys["D"] = f"laptops|config|{cpu}|{gpu}|{gpu_type}|{ram}|{storage_type}|{condition}"
     return keys
 
 
@@ -58,9 +61,10 @@ def _generate_generic_comparable_keys(normalized: Dict[str, Any], category_id: s
     clean_model = "".join(c.lower() for c in model if c.isalnum())
     attributes = normalized.get("attributes") or {}
     signature = "|".join(f"{k}={str(v).lower()}" for k, v in sorted(attributes.items())[:4])
+    condition = attributes.get("condition") or normalized.get("condition") or "unknown"
     keys = {}
     if clean_model:
-        keys["A"] = f"{category_id}|model|{brand}|{clean_model}"
+        keys["A"] = f"{category_id}|model|{brand}|{clean_model}|{condition}"
     if signature:
         keys["B"] = f"{category_id}|attrs|{brand}|{signature}"
     if brand != "unknown":

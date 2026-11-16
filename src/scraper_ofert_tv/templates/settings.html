@@ -16,7 +16,7 @@
                 <form class="settings-form" action="/settings/save" method="post">
                     <section class="content-section settings-section">
                         <div class="section-heading">
-                            <div><span class="section-kicker">01 · WYSZUKIWANIE</span><h2>Filtry OLX</h2><p>Wspólne dla wszystkich profili rozmiaru</p></div>
+                            <div><span class="section-kicker">01 · WYSZUKIWANIE</span><h2>Filtry OLX</h2><p>Wspólne wartości domyślne dla profili</p></div>
                             <span class="section-icon"><svg class="icon"><use href="#i-search"/></svg></span>
                         </div>
                         <div class="field-grid field-grid-four">
@@ -101,13 +101,15 @@
                     </div>
                     <div class="table-scroll">
                         <table class="data-table settings-table">
-                            <thead><tr><th>Profil</th><th>Kategoria</th><th>Filtry OLX</th><th>Stan</th><th>Akcje</th></tr></thead>
+                            <thead><tr><th>Profil</th><th>Kategoria</th><th>Stan przebiegu</th><th>Kolejka detali</th><th>Ostatni błąd / stop</th><th>Akcje</th></tr></thead>
                             <tbody>
                                 {% for profile in search_profiles %}
                                 <tr>
                                     <td class="primary-cell">{{ profile.label }}</td>
                                     <td>{{ profile.category_label }}</td>
-                                    <td><code>{{ profile.filters }}</code></td>
+                                    <td>{{ profile.last_run_status or 'Brak przebiegów' }}{% if profile.last_run_at %}<small>{{ profile.last_run_at }}</small>{% endif %}</td>
+                                    <td>{{ profile.pending_details }} oczek. · {{ profile.failed_details }} błęd.</td>
+                                    <td>{{ profile.last_stop_reason or '—' }}</td>
                                     <td><span class="status-badge {{ 'status-active' if profile.enabled else 'status-neutral' }}">{{ 'Aktywny' if profile.enabled else 'Wyłączony' }}</span></td>
                                     <td><div class="action-buttons">
                                         <form action="/action/scan" method="post"><input type="hidden" name="mode" value="national"><input type="hidden" name="profile_id" value="{{ profile.id }}"><button class="button-small button-success" type="submit">Uruchom</button></form>
@@ -115,7 +117,7 @@
                                     </div></td>
                                 </tr>
                                 {% else %}
-                                <tr><td class="empty-cell" colspan="5">Brak profili monitorowania.</td></tr>
+                                <tr><td class="empty-cell" colspan="6">Brak profili monitorowania.</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -125,7 +127,7 @@
                         <div class="field-grid field-grid-four">
                             <label>ID profilu<input name="profile_id" required pattern="[A-Za-z0-9_-]{1,80}" placeholder="laptopy_lodz"></label>
                             <label>Nazwa<input name="label" required maxlength="100" placeholder="Laptopy w Łodzi"></label>
-                            <label>Kategoria<select name="category_id" required>{% for category in categories %}<option value="{{ category.id }}">{{ category.label }} · {{ category.path }}</option>{% endfor %}</select></label>
+                            <label>Kategoria<select id="profile-category" name="category_id" required>{% for category in categories %}<option value="{{ category.id }}">{{ category.label }} · {{ category.path }}</option>{% endfor %}</select></label>
                             <label>Maks. stron<input type="number" name="max_pages" min="1" max="100" value="5"></label>
                             <label>Interwał · godziny<input type="number" name="interval_hours" min="0" max="168" value="0"><small>0 = interwał globalny dla wybranego trybu</small></label>
                             <label>Obszar<select name="mode"><option value="national">Cała Polska</option><option value="lodz_alerts">Lokalnie</option></select></label>
@@ -134,9 +136,10 @@
                             <label>Cena od · PLN<input type="number" name="price_min" min="0" value="0"></label>
                             <label>Cena do · PLN<input type="number" name="price_max" min="0" value="0"></label>
                             <label>Słowa kluczowe<input name="query" maxlength="120" placeholder="ThinkPad T14"></label>
-                            <label>Filtry OLX (JSON)<input name="olx_filters_json" value="{}" placeholder='{"search[filter_example][0]":"value"}'></label>
                         </div>
-                        <p class="form-help">Parametry filtrów kategorii są przekazywane do OLX jako query param. Przykładowy filtr TV: <code>{"search[filter_enum_size][0]":"40-49"}</code>.</p>
+                        <div id="category-filter-fields" class="field-grid field-grid-three"></div>
+                        <input type="hidden" name="olx_filters_json" value="{}">
+                        <p class="form-help">Pola kategorii są tworzone na podstawie schematu filtrów i przekazywane do OLX jako query param.</p>
                         <button class="button-primary" type="submit">Zapisz profil</button>
                     </form>
                     <form class="stacked-form profile-create-form" action="/settings/category/save" method="post">
@@ -147,6 +150,9 @@
                             <label>Nazwa<input name="label" required maxlength="80" placeholder="Drukarki"></label>
                             <label>Ścieżka OLX<input name="path" required pattern="/(?:[a-z0-9-]+/)+" placeholder="/elektronika/komputery/drukarki/"></label>
                             <label class="filter-search">Filtry kategorii (JSON)<input name="allowed_filter_params_json" value="[]" placeholder='["search[filter_enum_example][0]"]'></label>
+                            <label>Schemat filtrów (JSON)<textarea name="filter_schema_json" rows="3" placeholder='[{"key":"search[filter_enum_size][0]","label":"Rozmiar","type":"select","options":["40-49"]}]'>[]</textarea></label>
+                            <label>Atrybuty (JSON)<textarea name="attribute_schema_json" rows="3" placeholder='["brand","model","memory_gb"]'>[]</textarea></label>
+                            <label>Progi kategorii (JSON)<textarea name="scoring_settings_json" rows="3" placeholder='{"min_count":3,"estimated_costs":50}'>{}</textarea></label>
                         </div>
                         <button class="button-secondary" type="submit">Zapisz kategorię</button>
                     </form>
@@ -154,5 +160,48 @@
             </div>
         </main>
     </div>
+    <script>
+        const categoryConfigs = {{ categories|tojson }};
+        const categorySelect = document.getElementById("profile-category");
+        const filterContainer = document.getElementById("category-filter-fields");
+        const profileForm = categorySelect.closest("form");
+        const filtersField = profileForm.querySelector('[name="olx_filters_json"]');
+        function renderCategoryFilters() {
+            filterContainer.replaceChildren();
+            const config = categoryConfigs.find(item => item.id === categorySelect.value);
+            if (!config) return;
+            const definitions = config.filter_schema?.length
+                ? config.filter_schema
+                : (config.allowed_filter_params || []).map(key => ({key, label: key, type: "text"}));
+            for (const definition of definitions) {
+                const label = document.createElement("label");
+                label.textContent = definition.label || definition.key;
+                let input;
+                if (definition.type === "select") {
+                    input = document.createElement("select");
+                    const empty = document.createElement("option");
+                    empty.value = ""; empty.textContent = "Dowolny"; input.append(empty);
+                    for (const value of definition.options || []) {
+                        const option = document.createElement("option");
+                        option.value = value; option.textContent = value; input.append(option);
+                    }
+                } else {
+                    input = document.createElement("input");
+                    input.type = definition.type === "number" ? "number" : "text";
+                }
+                input.dataset.olxKey = definition.key;
+                label.append(input); filterContainer.append(label);
+            }
+        }
+        categorySelect.addEventListener("change", renderCategoryFilters);
+        profileForm.addEventListener("submit", () => {
+            const selected = {};
+            filterContainer.querySelectorAll("[data-olx-key]").forEach(input => {
+                if (input.value.trim()) selected[input.dataset.olxKey] = input.value.trim();
+            });
+            filtersField.value = JSON.stringify(selected);
+        });
+        renderCategoryFilters();
+    </script>
 </body>
 </html>

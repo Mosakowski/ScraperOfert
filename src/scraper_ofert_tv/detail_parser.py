@@ -7,19 +7,33 @@ def parse_detail(html: str) -> Dict[str, Any]:
     
     # 1. Tytul
     title_tag = parser.css_first('div[data-cy="ad_title"] h1')
-    title = title_tag.text(strip=True) if title_tag else ""
+    if not title_tag:
+        title_candidates = [node.text(strip=True) for node in parser.css('h4[data-nx-name="H4"]')]
+        title_candidates = [value for value in title_candidates if len(value) > 15]
+        title = max(title_candidates, key=len) if title_candidates else ""
+    else:
+        title = title_tag.text(strip=True)
+    if not title:
+        meta_title = parser.css_first('meta[property="og:title"]')
+        title = meta_title.attributes.get("content", "") if meta_title else ""
+        title = re.sub(r"\s*[·–-]\s*OLX\.pl.*$", "", title, flags=re.IGNORECASE).strip()
     
     # 2. Cena
     price_tag = parser.css_first('div[data-testid="ad-price-container"] h3')
-    raw_price = price_tag.text(strip=True) if price_tag else ""
+    price_candidates = [node.text(strip=True) for node in parser.css('div[data-testid="ad-price-container"] h3')]
+    price_candidates = [value for value in price_candidates if re.search(r"\d.*(?:zł|PLN)", value, re.IGNORECASE)]
+    raw_price = (price_candidates[-1] if price_candidates else (price_tag.text(strip=True) if price_tag else ""))
     
     # 3. Opis
-    desc_tag = parser.css_first('div[data-cy="ad_description"] div')
+    desc_tag = parser.css_first('div[data-testid="ad_description"]') or parser.css_first('div[data-cy="ad_description"]')
     description = desc_tag.text(strip=True, separator='\n') if desc_tag else ""
+    description = re.sub(r"^Opis\s*", "", description, count=1)
+    description = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[email ukryty]", description, flags=re.IGNORECASE)
+    description = re.sub(r"(?<!\d)(?:\+?48[\s()./|\\-]*)?(?:\d[\s()./|\\-]*){8}\d(?!\d)", "[telefon ukryty]", description)
     
     # 4. Parametry
     params = {}
-    param_elements = parser.css('ul > li > p, ul.css-sfcl1s > li, div[data-testid="ad-parameters"] li, ul > li')
+    param_elements = parser.css('div[data-testid="ad-parameters-container"] p, div[data-testid="ad-parameters"] li, ul > li > p, ul.css-sfcl1s > li')
     for el in param_elements:
         text = el.text(strip=True)
         if ":" in text:

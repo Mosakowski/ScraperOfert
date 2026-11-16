@@ -19,7 +19,7 @@ def test_export_to_excel(db_for_export, tmp_path):
     output_dir = tmp_path / "output"
     export_to_excel(db_for_export, output_dir)
     
-    latest_file = output_dir / "oferty_tv_latest.xlsx"
+    latest_file = output_dir / "oferty_olx_latest.xlsx"
     assert latest_file.exists()
     
     wb = openpyxl.load_workbook(latest_file)

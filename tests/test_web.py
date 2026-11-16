@@ -40,6 +40,7 @@ def test_settings_page():
     response = client.get("/settings")
     assert response.status_code == 200
     assert "Ustawienia" in response.text
+    assert "category-filter-fields" in response.text
 
 def test_rules_page():
     response = client.get("/rules")
@@ -90,3 +91,23 @@ def test_add_rule():
 def test_rule_test_endpoint():
     response = client.post("/rules/test", data={"text": "Sprzedam telewizor z test_pattern ok."})
     assert response.status_code == 200 or response.status_code == 303
+
+def test_dashboard_and_offers_accept_category_filter():
+    assert client.get("/?category=laptops").status_code == 200
+    assert client.get("/offers?category=laptops").status_code == 200
+
+def test_save_category_filter_and_scoring_schema():
+    response = client.post("/settings/category/save", data={
+        "category_id": "test_printers", "label": "Drukarki testowe",
+        "path": "/elektronika/drukarki/",
+        "allowed_filter_params_json": '["search[filter_enum_brand][0]"]',
+        "filter_schema_json": '[{"key":"search[filter_enum_brand][0]","label":"Marka","type":"select","options":["HP"]}]',
+        "attribute_schema_json": '["brand","print_technology"]',
+        "scoring_settings_json": '{"min_count":4}',
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    from scraper_ofert_tv.settings_service import SettingsService
+    service = SettingsService()
+    category = next(item for item in service.get_categories() if item["id"] == "test_printers")
+    assert category["filter_schema"][0]["options"] == ["HP"]
+    assert service.get_scoring_settings("test_printers")["min_count"] == 4

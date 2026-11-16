@@ -215,5 +215,35 @@ def apply_migrations(db_path: Path = None):
             VALUES (3, 'add_product_categories_and_search_profiles', ?)
         """, (now,))
         conn.commit()
+
+    # Migration 4: category filter/attribute schemas and category-specific scoring defaults.
+    cursor.execute("SELECT 1 FROM schema_migrations WHERE version=4")
+    if not cursor.fetchone():
+        columns = {row[1] for row in cursor.execute("PRAGMA table_info(categories)")}
+        for column, definition in (
+            ("filter_schema_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("attribute_schema_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("scoring_settings_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ):
+            if column not in columns:
+                cursor.execute(f"ALTER TABLE categories ADD COLUMN {column} {definition}")
+
+        from scraper_ofert_tv.categories import CATEGORY_DEFINITIONS
+        for category_id, definition in CATEGORY_DEFINITIONS.items():
+            cursor.execute("""
+                UPDATE categories
+                SET filter_schema_json=?, attribute_schema_json=?
+                WHERE id=?
+            """, (json.dumps(definition.get("filter_schema", []), ensure_ascii=False),
+                  json.dumps(definition.get("attribute_schema", []), ensure_ascii=False), category_id))
+        cursor.execute("""
+            UPDATE description_rules SET applies_to='title', updated_at=?
+            WHERE id='laptop_parts_exclude'
+        """, (now_iso(),))
+        cursor.execute("""
+            INSERT INTO schema_migrations (version, name, applied_at)
+            VALUES (4, 'add_category_schemas_and_scoring', ?)
+        """, (now_iso(),))
+        conn.commit()
         
     conn.close()

@@ -53,7 +53,7 @@ def run_export_excel(args):
     print("Rozpoczynanie eksportu do Excela...")
     conn = get_connection()
     output_dir = Path("output")
-    export_to_excel(conn, output_dir)
+    export_to_excel(conn, output_dir, category_id=args.category)
     conn.close()
     print("Pomyślnie wyeksportowano do Excela w folderze output/")
 
@@ -114,6 +114,7 @@ def main():
     # T207 export excel
     parser_export = subparsers.add_parser("export", help="Eksportuje raporty")
     parser_export.add_argument("format", choices=["excel"], help="Format eksportu (tylko excel)")
+    parser_export.add_argument("--category", help="Opcjonalny ID kategorii do eksportu")
 
     # process-details
     parser_details = subparsers.add_parser("process-details", help="Pobiera z kolejki detali i przetwarza je")

@@ -1,8 +1,8 @@
-# Scraper Ofert TV
+# Scraper Ofert OLX
 
-Zaawansowany scraper ofert telewizorow oparty na lokalnej architekturze zintegrowanej z baza SQLite. Pozwala na automatyczne wyszukiwanie ofert na terenie calego kraju, grupowanie ich pod katem modeli (tworzac swoista gielde cenowa) oraz wypatrywanie lokalnych, łódzkich okazji zakupowych dla zysku (flipowanie).
+Scraper publicznych ofert OLX z architekturą kategorii i profili wyszukiwania, zintegrowany z bazą SQLite. Pozwala pobierać wyniki z wybranych podkategorii, grupować oferty do porównań i filtrować wyniki według kategorii.
 
-Docelowym produktem jest uniwersalny system dla różnych kategorii ofert. Aplikacja ma wspólny katalog kategorii i profile wyszukiwania; gotowe definicje obejmują telewizory oraz laptopy. Normalizacja telewizorów i laptopów jest kategoriowa, a pozostałe dodane kategorie korzystają z normalizacji ogólnej. Profil zapisuje kategorię, ścieżkę OLX, lokalizację, ceny, słowa kluczowe, filtry URL, limit stron i opcjonalny interwał.
+Gotowe definicje obejmują telewizory i laptopy. Normalizacja oraz klucze porównawcze uwzględniają kategorię; inne jawnie dodane kategorie korzystają z wariantu ogólnego. Profil zapisuje kategorię, ścieżkę OLX, lokalizację, ceny, słowa kluczowe, zwalidowane filtry, limit stron i opcjonalny interwał.
 
 Szczegółowa analiza obecnego kodu i plan uniwersalizacji: [PLAN_UNIWERSALIZACJI.md](PLAN_UNIWERSALIZACJI.md).
 

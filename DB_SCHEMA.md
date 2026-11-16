@@ -1,6 +1,6 @@
-# DB Schema - Scraper Ofert TV
+# DB Schema - Scraper Ofert OLX
 
-Ten dokument opisuje schemat SQLite aplikacji. SQLite jest źródłem prawdy, a Excel jest raportem generowanym z bazy. Wersja migracji 3 dodaje katalog `categories`, `search_profiles`, kategorię i elastyczne atrybuty do ofert oraz identyfikator profilu w historii przebiegów. `size_profiles` pozostaje tabelą zgodności dla historii TV.
+Ten dokument opisuje schemat SQLite aplikacji. SQLite jest źródłem prawdy, a Excel jest raportem generowanym z bazy. Migracja 3 dodała katalog `categories`, `search_profiles`, kategorię i elastyczne atrybuty do ofert oraz identyfikator profilu w historii przebiegów. Migracja 4 dodała schematy filtrów i atrybutów oraz ustawienia scoringu dla kategorii. `size_profiles` pozostaje tabelą zgodności dla historii TV.
 
 Typy sa opisane pod SQLite:
 
@@ -59,12 +59,13 @@ Przykladowe klucze:
 `categories` przechowuje ścieżkę OLX, etykietę, domenę normalizacji oraz dozwolone parametry filtrów URL. `search_profiles` przechowuje kategorię, kryteria JSON, limit stron, włączenie i opcjonalny interwał godzinowy. Profile migracji TV zachowują poprzednie ID; profil `laptops_all` jest seedem laptopów.
 
 ```sql
-categories(id, label, path, domain, allowed_filter_params_json, enabled, created_at, updated_at)
+categories(id, label, path, domain, allowed_filter_params_json, filter_schema_json,
+           attribute_schema_json, scoring_settings_json, enabled, created_at, updated_at)
 search_profiles(id, category_id, label, enabled, filters_json, max_pages, interval_hours, priority,
                 legacy_size_profile_id, created_at, updated_at)
 ```
 
-`filters_json` może zawierać `mode`, `location`, `radius_km`, `price_min`, `price_max`, `query` oraz słownik `olx_filters`.
+`filters_json` może zawierać `mode`, `location`, `radius_km`, `price_min`, `price_max`, `query` oraz słownik `olx_filters`. Nazwy filtrów i wartości typu select są sprawdzane względem schematu kategorii.
 
 ## 5. `size_profiles` (zgodność wsteczna)
 

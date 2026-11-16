@@ -24,6 +24,12 @@ def score_offers(conn: sqlite3.Connection):
     offers = cursor.fetchall()
     
     now = now_iso()
+    global_settings_row = cursor.execute("SELECT value_json FROM settings WHERE key = 'scoring_settings'").fetchone()
+    global_settings = json.loads(global_settings_row["value_json"]) if global_settings_row else {}
+    category_settings = {
+        row["id"]: json.loads(row["scoring_settings_json"] or "{}")
+        for row in cursor.execute("SELECT id, scoring_settings_json FROM categories").fetchall()
+    }
     for offer in offers:
         offer_id = offer['id']
         price = offer['price_pln']
@@ -42,9 +48,7 @@ def score_offers(conn: sqlite3.Connection):
         }
         keys = generate_comparable_keys(normalized, category_id=category_id)
         
-        cursor.execute("SELECT value_json FROM settings WHERE key = 'scoring_settings'")
-        setting_row = cursor.fetchone()
-        scoring_settings = json.loads(setting_row['value_json']) if setting_row else {}
+        scoring_settings = {**global_settings, **category_settings.get(category_id, {})}
         min_count = int(scoring_settings.get("min_count", 3))
         
         best_market = None
@@ -115,13 +119,14 @@ def score_offers(conn: sqlite3.Connection):
         min_discount = float(scoring_settings.get("min_discount", 15.0))
         min_profit = float(scoring_settings.get("min_profit", 100))
         min_score = float(scoring_settings.get("min_score", 30.0))
-        # confidence threshold and min_count were checked above via offers_count
+        min_confidence = float(scoring_settings.get("min_confidence", 0.0))
         
         if sys_status == 'weak_match':
             # weak_match pozostaje weak_match
             final_status = 'weak_match'
         else:
-            if score >= min_score and market_discount_percent >= min_discount and estimated_profit >= min_profit:
+            if (score >= min_score and market_discount_percent >= min_discount
+                    and estimated_profit >= min_profit and final_comparison_confidence >= min_confidence):
                 final_status = 'opportunity'
             else:
                 final_status = 'active'

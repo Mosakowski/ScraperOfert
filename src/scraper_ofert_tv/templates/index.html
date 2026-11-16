@@ -12,6 +12,13 @@
         <main class="main-content">
             {% include "page_header.html" %}
             <div class="page-body dashboard-page">
+                <form class="filter-form dashboard-category-filter" action="/" method="get">
+                    <label for="dashboard-category">Zakres kategorii</label>
+                    <select id="dashboard-category" name="category" onchange="this.form.submit()">
+                        <option value="">Wszystkie kategorie</option>
+                        {% for category in categories %}<option value="{{ category.id }}" {{ 'selected' if selected_category == category.id else '' }}>{{ category.label }}</option>{% endfor %}
+                    </select>
+                </form>
                 <section class="action-bar" aria-label="Operacje">
                     <div class="action-copy">
                         <span class="section-kicker">SZYBKIE AKCJE</span>
@@ -31,6 +38,10 @@
                             <button class="button-secondary" type="submit"><svg class="icon"><use href="#i-refresh"/></svg>Przelicz rynek</button>
                         </form>
                         <form action="/action/export" method="post">
+                            <select name="category_id" aria-label="Kategoria eksportu">
+                                <option value="">Wszystkie kategorie</option>
+                                {% for category in categories %}<option value="{{ category.id }}">{{ category.label }}</option>{% endfor %}
+                            </select>
                             <button class="button-secondary" type="submit"><svg class="icon"><use href="#i-download"/></svg>Eksport XLSX</button>
                         </form>
                     </div>

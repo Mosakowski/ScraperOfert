@@ -121,7 +121,8 @@ class DetailWorker:
                 UPDATE offers 
                 SET seller_name = ?, seller_profile_url = ?,
                     brand = ?, model = ?, technology = ?, resolution = ?, detected_size_inches = ?,
-                    city = ?, district = ?, comparable_key = ?, comparison_confidence = ?, 
+                    city = ?, district = ?, condition_value = COALESCE(?, condition_value),
+                    comparable_key = ?, comparison_confidence = ?,
                     normalization_diagnostics_json = ?, attributes_json = ?,
                     system_status = COALESCE(?, system_status), updated_at = ?, last_detail_fetch_at = ?
                 WHERE id = ?
@@ -129,7 +130,7 @@ class DetailWorker:
                 detail.get('seller_name'), detail.get('seller_url'),
                 normalized.get('brand'), normalized.get('model_name'), normalized.get('technology'), 
                 normalized.get('resolution'), normalized.get('size_inches'),
-                normalized.get('city'), normalized.get('district'),
+                normalized.get('city'), normalized.get('district'), normalized.get('condition_value'),
                 comp_key, str(confidence), json.dumps(normalized.get('diagnostics', {})),
                 json.dumps(normalized.get('attributes', {}), ensure_ascii=False),
                 system_status, now, now, offer_id

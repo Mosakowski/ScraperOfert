@@ -2,12 +2,12 @@ import logging
 import json
 from scraper_ofert_tv.storage import get_connection, now_iso
 from scraper_ofert_tv.normalization import normalize_offer_data
-from scraper_ofert_tv.comparison import generate_comparable_key, calculate_confidence
+from scraper_ofert_tv.comparison import generate_comparable_keys, calculate_normalization_confidence
 
 logger = logging.getLogger(__name__)
 
-def run_backfill():
-    conn = get_connection()
+def run_backfill(db_path=None):
+    conn = get_connection(db_path) if db_path else get_connection()
     cursor = conn.cursor()
     
     # Dodanie kolumny, jesli nie istnieje
@@ -28,7 +28,7 @@ def run_backfill():
     # Wybieramy najnowszy snapshot z 'detail_fetch' dla kazdej oferty.
     
     cursor.execute("""
-        SELECT o.id, o.raw_price, o.price_pln, o.is_free, o.negotiable, o.olx_size_bucket, o.raw_location,
+        SELECT o.id, o.category_id, o.raw_price, o.price_pln, o.is_free, o.negotiable, o.olx_size_bucket, o.raw_location,
                s.title, s.description, s.params_json
         FROM offers o
         JOIN offer_snapshots s ON s.offer_id = o.id
@@ -57,20 +57,24 @@ def run_backfill():
             'params': json.loads(row['params_json']) if row['params_json'] else {}
         }
         
-        normalized = normalize_offer_data(offer_dict, detail_dict, specs_cache)
-        comp_key = generate_comparable_key(normalized)
-        confidence = calculate_confidence(normalized, comp_key)
+        category_id = row['category_id'] or 'televisions'
+        normalized = normalize_offer_data(offer_dict, detail_dict, specs_cache, category_id=category_id)
+        keys = generate_comparable_keys(normalized, category_id=category_id)
+        comp_key = keys.get('A') or next(iter(keys.values()), None)
+        confidence = calculate_normalization_confidence(normalized, category_id=category_id)
         
         # aktualizacja tylko normalizacji
         cursor.execute("""
             UPDATE offers 
             SET brand = ?, model = ?, technology = ?, resolution = ?, detected_size_inches = ?,
+                attributes_json = ?, condition_value = COALESCE(?, condition_value),
                 comparable_key = ?, comparison_confidence = ?, 
                 normalization_diagnostics_json = ?, updated_at = ?
             WHERE id = ?
         """, (
             normalized.get('brand'), normalized.get('model_name'), normalized.get('technology'), 
             normalized.get('resolution'), normalized.get('size_inches'),
+            json.dumps(normalized.get('attributes', {}), ensure_ascii=False), normalized.get('condition_value'),
             comp_key, str(confidence), json.dumps(normalized.get('diagnostics', {})),
             now, offer_id
         ))

@@ -1,6 +1,6 @@
 # Plan uniwersalizacji scrapera ofert OLX
 
-**Status:** bazowa uniwersalizacja wdrożona w kodzie; wymagane pozostaje sprawdzenie działania na kopii bazy i ograniczony przebieg OLX
+**Status (2026-11-16):** bazowa uniwersalizacja jest wdrożona i przetestowana lokalnie. Migracja v4 przeszła na lokalnej bazie (1 372 ofert zachowane), testy: 52 passed. Ograniczony smoke test publicznego listingu i detalu laptopa OLX przeszedł. Wciąż pozostaje walidacja wdrożeniowa na VPS oraz dokładność normalizacji/wyceny dla większej próbki i kolejnych kategorii.
 **Data analizy:** 2026-11-06  
 **Zakres planu:** wiele kategorii w serwisie OLX.pl; TV jest pierwszą kategorią, laptopy są pierwszym przykładem kolejnej kategorii.
 
@@ -135,7 +135,9 @@ Nie zmieniać produkcyjnej bazy przy pierwszym prototypie. Najpierw test migracj
 
 ### Stan wdrożenia (2026-11-06)
 
-- **Wdrożone:** katalog kategorii `televisions` i `laptops`, profile wyszukiwania, migracja SQLite zachowująca dotychczasowe profile TV, budowanie URL-i po ścieżce kategorii, walidacja dozwolonych filtrów, atrybuty JSON, normalizacja i klucze porównawcze TV/laptopów/pozostałych kategorii, reguły laptopów, filtr kategorii w panelu ofert, ręczne uruchamianie profilu, profilowy interwał scheduler i ogólny eksport `oferty_olx_latest.xlsx`.
+- **Wdrożone:** katalog kategorii `televisions` i `laptops`, profile wyszukiwania, migracje SQLite zachowujące dotychczasowe profile TV, budowanie URL-i po ścieżce kategorii, walidacja nazw i wartości filtrów według schematu, atrybuty JSON, kategoryczna normalizacja i klucze porównawcze, reguły laptopów, filtr kategorii w panelu ofert, ręczne uruchamianie profilu, profilowy interwał scheduler, kategoryczne eksporty i diagnostyka profilu. Backfill normalizacji obsługuje teraz kategorię rekordu.
+- **Sprawdzone lokalnie:** pełny zestaw testów (52 passed), migracja v4 lokalnej bazy (1 372 oferty zachowane), listing laptopów OLX (HTTP 200, parsowanie wyników i paginacji), detal laptopa OLX (parametry i redakcja kontaktu).
+- **Pozostaje:** wdrożyć commit na VPS, wykonać tam backup i migrację, potwierdzić dwie usługi oraz przeprowadzić ograniczony przebieg w środowisku serwera. Nowe kategorie wymagają osobnej weryfikacji ścieżki, filtrów, pól i jakości porównań.
 - **Częściowe:** kategorie są konfigurowalne z panelu, ale dla kategorii spoza TV/laptopów używana jest normalizacja ogólna; pola kategorii i ich filtry wpisuje się jako JSON, nie są dynamicznie odkrywane z OLX. Scoring i alerty w większości współdzielą dotychczasowe ustawienia.
 - **Do operacyjnego potwierdzenia:** migracja na kopii prawdziwej bazy, poprawność URL-i kategorii/filtrów w bieżącym OLX, parser laptopowych detali i jakość porównań na ograniczonej próbce. Nie uruchamiano przebiegu live w ramach wdrożenia kodu.
 

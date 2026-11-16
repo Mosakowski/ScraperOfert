@@ -8,13 +8,14 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from scraper_ofert_tv.storage import now_iso
 
-def export_to_excel(conn: sqlite3.Connection, output_dir: Path):
+def export_to_excel(conn: sqlite3.Connection, output_dir: Path, category_id: str = None):
     os.makedirs(output_dir, exist_ok=True)
     
     # Tworzymy plik
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    latest_file = output_dir / "oferty_olx_latest.xlsx"
-    archive_file = output_dir / f"oferty_olx_{timestamp}.xlsx"
+    suffix = f"_{category_id}" if category_id else ""
+    latest_file = output_dir / f"oferty_olx{suffix}_latest.xlsx"
+    archive_file = output_dir / f"oferty_olx{suffix}_{timestamp}.xlsx"
     legacy_tv_file = output_dir / "oferty_tv_latest.xlsx"
     
     wb = Workbook()
@@ -22,31 +23,31 @@ def export_to_excel(conn: sqlite3.Connection, output_dir: Path):
     # Arkusz 1: Lodz alerty (jesli jest, dajemy na poczatek zeby przykuc uwage)
     ws_alerts = wb.active
     ws_alerts.title = "Lodz alerty"
-    _write_lodz_alerts(conn, ws_alerts)
+    _write_lodz_alerts(conn, ws_alerts, category_id)
     
     # Arkusz 2: Lodz kandydaci (diagnostyka)
     ws_lodz_cand = wb.create_sheet("Lodz kandydaci")
-    _write_lodz_candidates(conn, ws_lodz_cand)
+    _write_lodz_candidates(conn, ws_lodz_cand, category_id)
     
     # Arkusz 3: Oferty
     ws_offers = wb.create_sheet("Oferty")
-    _write_offers(conn, ws_offers)
+    _write_offers(conn, ws_offers, category_id)
     
     # Arkusz 3: Baza cen
     ws_market = wb.create_sheet("Baza cen")
-    _write_market(conn, ws_market)
+    _write_market(conn, ws_market, category_id)
     
     # Arkusz: Pokrycie rynku
     ws_coverage = wb.create_sheet("Pokrycie rynku")
-    _write_market_coverage(conn, ws_coverage)
+    _write_market_coverage(conn, ws_coverage, category_id)
     
     # Arkusz 4: Historia skanow
     ws_runs = wb.create_sheet("Historia skanow")
-    _write_scans(conn, ws_runs)
+    _write_scans(conn, ws_runs, category_id)
     
     # Arkusz 5: Braki specyfikacji
     ws_missing = wb.create_sheet("Braki specyfikacji modeli")
-    _write_missing_specs(conn, ws_missing)
+    _write_missing_specs(conn, ws_missing, category_id)
     
     # Formatowanie (zamrozenie naglowkow, filtry, itp.)
     for ws in wb.worksheets:
@@ -54,7 +55,8 @@ def export_to_excel(conn: sqlite3.Connection, output_dir: Path):
         
     wb.save(latest_file)
     wb.save(archive_file)
-    shutil.copy2(latest_file, legacy_tv_file)
+    if category_id == "televisions":
+        shutil.copy2(latest_file, legacy_tv_file)
     
     # Zapisujemy log do bazy
     cursor = conn.cursor()
@@ -71,7 +73,7 @@ def export_to_excel(conn: sqlite3.Connection, output_dir: Path):
     ))
     conn.commit()
 
-def _write_lodz_alerts(conn, ws):
+def _write_lodz_alerts(conn, ws, category_id=None):
     headers = ["ID Alertu", "Tytuł", "URL", "Score", "Zysk (PLN)", "Rabat (%)", "Cena ref. (PLN)", "Cena oferty (PLN)", "Data alertu"]
     ws.append(headers)
     
@@ -81,15 +83,16 @@ def _write_lodz_alerts(conn, ws):
                a.reference_price_pln, a.offer_price_pln, a.first_created_at
         FROM alert_events a
         JOIN offers o ON a.offer_id = o.id
+        WHERE (? IS NULL OR o.category_id = ?)
         ORDER BY a.id DESC
-    """)
+    """, (category_id, category_id))
     for r in cursor.fetchall():
         ws.append([
             r['id'], r['title'], r['url'], r['score'], r['estimated_profit_pln'], 
             r['market_discount_percent'], r['reference_price_pln'], r['offer_price_pln'], r['first_created_at']
         ])
         
-def _write_lodz_candidates(conn, ws):
+def _write_lodz_candidates(conn, ws, category_id=None):
     headers = [
         "Tytuł", "Cena (PLN)", "Score", "Status", "Zysk (PLN)", "Rabat (%)", 
         "Cena ref. (PLN)", "Klucz", "Pewność", 
@@ -121,11 +124,11 @@ def _write_lodz_candidates(conn, ws):
             o.url, o.brand, o.model, o.technology, o.normalization_diagnostics_json
         FROM offers o
         JOIN offer_scores s ON s.offer_id = o.id
-        WHERE {lodz_condition} AND s.score >= ?
+        WHERE {lodz_condition} AND s.score >= ? AND (? IS NULL OR o.category_id = ?)
         ORDER BY s.score DESC, s.estimated_profit_pln DESC
         LIMIT 100
     """
-    cursor.execute(query, (min_score,))
+    cursor.execute(query, (min_score, category_id, category_id))
     for r in cursor.fetchall():
         conf_str = r['comparison_confidence']
         try:
@@ -175,7 +178,7 @@ def _write_lodz_candidates(conn, ws):
             r['scoring_reasons_json'], used_specs, r['rule_flags'], r['url']
         ])
 
-def _write_offers(conn, ws):
+def _write_offers(conn, ws, category_id=None):
     headers = ["ID", "Kategoria", "Status", "Tytuł", "Cena (PLN)", "Miasto", "Parametry", "Marka", "Model", "Klucz", "Pewność", "URL"]
     ws.append(headers)
     
@@ -183,10 +186,11 @@ def _write_offers(conn, ws):
     cursor.execute("""
         SELECT o.id, c.label AS category, o.system_status, o.title, o.price_pln, o.city,
                o.detected_size_inches, o.attributes_json, o.brand, o.model, o.comparable_key,
-               o.comparison_confidence, o.url
+            o.comparison_confidence, o.url
         FROM offers o LEFT JOIN categories c ON c.id=o.category_id
-        ORDER BY id DESC LIMIT 5000
-    """)
+        WHERE (? IS NULL OR o.category_id = ?)
+        ORDER BY o.id DESC LIMIT 5000
+    """, (category_id, category_id))
     for r in cursor.fetchall():
         ws.append([
             r['id'], r['category'], r['system_status'], r['title'], r['price_pln'], r['city'],
@@ -194,23 +198,26 @@ def _write_offers(conn, ws):
             r['brand'], r['model'], r['comparable_key'], r['comparison_confidence'], r['url']
         ])
 
-def _write_market(conn, ws):
+def _write_market(conn, ws, category_id=None):
     headers = ["Klucz", "Liczba ofert", "Mediana", "Średnia", "P25", "P75", "Data obliczenia"]
     ws.append(headers)
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT comparable_key, offers_count, median_price_pln, avg_price_pln, p25_price_pln, p75_price_pln, calculated_at
-        FROM market_price_references
-        ORDER BY offers_count DESC
-    """)
+        SELECT m.comparable_key, m.offers_count, m.median_price_pln, m.avg_price_pln,
+               m.p25_price_pln, m.p75_price_pln, m.calculated_at
+        FROM market_price_references m
+        JOIN comparable_groups g ON g.comparable_key=m.comparable_key
+        WHERE (? IS NULL OR g.category_id = ?)
+        ORDER BY m.offers_count DESC
+    """, (category_id, category_id))
     for r in cursor.fetchall():
         ws.append([
             r['comparable_key'], r['offers_count'], r['median_price_pln'], r['avg_price_pln'], 
             r['p25_price_pln'], r['p75_price_pln'], r['calculated_at']
         ])
 
-def _write_market_coverage(conn, ws):
+def _write_market_coverage(conn, ws, category_id=None):
     headers = [
         "Klucz", "Liczba ofert (National)", "Mediana", "P25", "P75",
         "Pewność (Confidence)", "Liczba ofert (Łódź)"
@@ -229,17 +236,20 @@ def _write_market_coverage(conn, ws):
         SELECT 
             m.comparable_key, m.offers_count, m.median_price_pln, 
             m.p25_price_pln, m.p75_price_pln, m.confidence,
-            (SELECT COUNT(*) FROM offers o WHERE o.comparable_key = m.comparable_key AND {lodz_condition}) as lodz_count
+            (SELECT COUNT(*) FROM offers o WHERE o.comparable_key = m.comparable_key AND {lodz_condition}
+             AND (? IS NULL OR o.category_id = ?)) as lodz_count
         FROM market_price_references m
+        JOIN comparable_groups g ON g.comparable_key=m.comparable_key
+        WHERE (? IS NULL OR g.category_id = ?)
         ORDER BY m.offers_count DESC
-    """)
+    """, (category_id, category_id, category_id, category_id))
     for r in cursor.fetchall():
         ws.append([
             r['comparable_key'], r['offers_count'], r['median_price_pln'],
             r['p25_price_pln'], r['p75_price_pln'], r['confidence'], r['lodz_count']
         ])
         
-def _write_scans(conn, ws):
+def _write_scans(conn, ws, category_id=None):
     headers = [
         "ID", "Tryb", "Status", "Profile total", "Profile done",
         "Oferty widziane", "Oferty nowe", "Oferty znane",
@@ -251,9 +261,13 @@ def _write_scans(conn, ws):
     cursor.execute("""
         SELECT id, mode, status, profiles_total, profiles_done, offers_seen,
                offers_new, offers_known, started_at, finished_at, stop_reason
-        FROM search_runs
-        ORDER BY id DESC LIMIT 100
-    """)
+        FROM search_runs r
+        WHERE (? IS NULL OR EXISTS (
+            SELECT 1 FROM search_profile_runs spr JOIN search_profiles p ON p.id=spr.search_profile_id
+            WHERE spr.search_run_id=r.id AND p.category_id=?
+        ))
+        ORDER BY r.id DESC LIMIT 100
+    """, (category_id, category_id))
     for r in cursor.fetchall():
         ws.append([
             r['id'], r['mode'], r['status'], r['profiles_total'], r['profiles_done'],
@@ -261,7 +275,7 @@ def _write_scans(conn, ws):
             r['started_at'], r['finished_at'], r['stop_reason']
         ])
 
-def _write_missing_specs(conn, ws):
+def _write_missing_specs(conn, ws, category_id=None):
     headers = ["Marka", "Model", "Znormalizowany", "Liczba ofert", "Tytuł przykładowy", "Braki", "Obecny Rozmiar", "Obecna Tech", "Obecna Res", "URL przykładowy"]
     ws.append(headers)
     
@@ -270,11 +284,12 @@ def _write_missing_specs(conn, ws):
         SELECT o.brand, o.model as raw_model
         FROM offers o
         WHERE o.brand IS NOT NULL AND o.model IS NOT NULL
-    """)
+          AND (? IS NULL OR o.category_id = ?)
+    """, (category_id, category_id))
     def _norm(m):
         return "".join(c.lower() for c in m if c.isalnum())
         
-    cursor.execute("SELECT brand, normalized_model, technology, resolution, screen_size_inches FROM model_specs")
+    cursor.execute("SELECT brand, normalized_model, technology, resolution, screen_size_inches FROM model_specs WHERE (? IS NULL OR product_category_id=?)", (category_id, category_id))
     specs = {}
     for r in cursor.fetchall():
         specs[(r['brand'].lower(), r['normalized_model'])] = r
@@ -292,9 +307,10 @@ def _write_missing_specs(conn, ws):
         FROM offers o
         LEFT JOIN offer_snapshots s ON s.offer_id = o.id
         WHERE o.brand IS NOT NULL AND o.model IS NOT NULL
+          AND (? IS NULL OR o.category_id = ?)
         GROUP BY o.brand, o.model
         ORDER BY offers_count DESC
-    """)
+    """, (category_id, category_id))
     groups = cursor.fetchall()
     
     for g in groups:
