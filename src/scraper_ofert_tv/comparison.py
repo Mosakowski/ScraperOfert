@@ -42,16 +42,19 @@ def _generate_laptop_comparable_keys(normalized: Dict[str, Any]) -> Dict[str, st
     gpu = "".join(c.lower() for c in str(attrs.get("gpu", "")).split() if c.isalnum())
     gpu_type = "".join(c.lower() for c in str(attrs.get("gpu_type", "")).split() if c.isalnum())
     ram = attrs.get("ram_gb")
+    ram_bucket = "".join(c.lower() for c in str(attrs.get("ram_bucket", "")).split() if c.isalnum())
     storage = attrs.get("storage_gb")
+    storage_bucket = "".join(c.lower() for c in str(attrs.get("storage_bucket", "")).split() if c.isalnum())
+    screen_bucket = "".join(c.lower() for c in str(attrs.get("screen_bucket", "")).split() if c.isalnum())
     storage_type = "".join(c.lower() for c in str(attrs.get("storage_type", "")).split() if c.isalnum())
     condition = (attrs.get("condition") or normalized.get("condition") or "unknown").strip().lower()
     keys = {}
     if clean_model:
-        keys["A"] = f"laptops|model|{brand}|{clean_model}|{cpu}|{gpu}|{gpu_type}|{ram}|{storage}|{storage_type}|{condition}"
+        keys["A"] = f"laptops|model|{brand}|{clean_model}|{cpu}|{gpu}|{gpu_type}|{ram}|{ram_bucket}|{storage}|{storage_bucket}|{storage_type}|{screen_bucket}|{condition}"
         keys["B"] = f"laptops|model|{brand}|{clean_model}|{cpu}|{gpu}|{gpu_type}|{condition}"
         keys["C"] = f"laptops|model|{brand}|{clean_model}|{condition}"
     if cpu and (gpu or gpu_type):
-        keys["D"] = f"laptops|config|{cpu}|{gpu}|{gpu_type}|{ram}|{storage_type}|{condition}"
+        keys["D"] = f"laptops|config|{cpu}|{gpu}|{gpu_type}|{ram}|{ram_bucket}|{storage_bucket}|{storage_type}|{condition}"
     return keys
 
 

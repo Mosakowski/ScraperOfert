@@ -119,7 +119,9 @@ class DetailWorker:
             # Update offers
             conn.execute("""
                 UPDATE offers 
-                SET seller_name = ?, seller_profile_url = ?,
+                SET title = COALESCE(NULLIF(?, ''), title),
+                    raw_title = COALESCE(NULLIF(?, ''), raw_title),
+                    seller_name = ?, seller_profile_url = ?,
                     brand = ?, model = ?, technology = ?, resolution = ?, detected_size_inches = ?,
                     city = ?, district = ?, condition_value = COALESCE(?, condition_value),
                     comparable_key = ?, comparison_confidence = ?,
@@ -127,6 +129,7 @@ class DetailWorker:
                     system_status = COALESCE(?, system_status), updated_at = ?, last_detail_fetch_at = ?
                 WHERE id = ?
             """, (
+                detail.get('full_title'), detail.get('full_title'),
                 detail.get('seller_name'), detail.get('seller_url'),
                 normalized.get('brand'), normalized.get('model_name'), normalized.get('technology'), 
                 normalized.get('resolution'), normalized.get('size_inches'),

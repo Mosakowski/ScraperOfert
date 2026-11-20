@@ -5,18 +5,32 @@ from selectolax.parser import HTMLParser
 def parse_detail(html: str) -> Dict[str, Any]:
     parser = HTMLParser(html)
     
-    # 1. Tytul
-    title_tag = parser.css_first('div[data-cy="ad_title"] h1')
-    if not title_tag:
-        title_candidates = [node.text(strip=True) for node in parser.css('h4[data-nx-name="H4"]')]
+    # 1. Tytul: naglowek ogloszenia jest pewniejszy od pozostalych h4 strony.
+    title = ""
+    for selector in (
+        'div[data-cy="ad_title"] h1',
+        'h1[data-testid="ad-title"]',
+        'h1',
+    ):
+        title_tag = parser.css_first(selector)
+        if title_tag:
+            title = _clean_title(title_tag.text(strip=True, separator=" "))
+            if title:
+                break
+
+    meta_title = parser.css_first('meta[property="og:title"]')
+    meta_value = _clean_title(meta_title.attributes.get("content", "")) if meta_title else ""
+    if not title:
+        title_candidates = [
+            _clean_title(node.text(strip=True, separator=" "))
+            for node in parser.css('h4[data-nx-name="H4"]')
+        ]
         title_candidates = [value for value in title_candidates if len(value) > 15]
         title = max(title_candidates, key=len) if title_candidates else ""
-    else:
-        title = title_tag.text(strip=True)
+    if len(title) > 120 and 15 < len(meta_value) <= 120:
+        title = meta_value
     if not title:
-        meta_title = parser.css_first('meta[property="og:title"]')
-        title = meta_title.attributes.get("content", "") if meta_title else ""
-        title = re.sub(r"\s*[·–-]\s*OLX\.pl.*$", "", title, flags=re.IGNORECASE).strip()
+        title = meta_value
     
     # 2. Cena
     price_tag = parser.css_first('div[data-testid="ad-price-container"] h3')
@@ -75,3 +89,8 @@ def parse_detail(html: str) -> Dict[str, Any]:
         "seller_url": seller_url,
         "status": status
     }
+
+
+def _clean_title(value: str) -> str:
+    value = re.sub(r"\s+", " ", value or "").strip()
+    return re.sub(r"\s*[·–-]\s*OLX\.pl.*$", "", value, flags=re.IGNORECASE).strip()

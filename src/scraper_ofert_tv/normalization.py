@@ -99,8 +99,10 @@ def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Di
         model_source = "params"
     else:
         model_match = re.search(
-            r"\b(?:thinkpad\s+[a-z]\d{1,2}|thinkbook\s+[a-z0-9-]+|ideapad\s+[a-z0-9-]+|"
-            r"latitude\s+\d{3,4}|precision\s+\d{3,4}|(?:probook|elitebook|zbook)\s+\d{1,2}[a-z]?(?:\s+g\d{1,2})?|"
+            r"\b(?:thinkpad\s+[a-z]\d{2,4}|thinkbook\s+[a-z0-9-]+(?:\s+\d{1,3})?|"
+            r"ideapad\s+(?:slim\s+\d{1,2}|[a-z0-9-]+(?:\s+\d{1,3})?)|"
+            r"latitude\s+[a-z]?\d{3,4}[a-z]?|precision\s+[a-z]?\d{3,4}[a-z]?|"
+            r"(?:probook|elitebook|zbook)\s+\d{2,4}[a-z]?(?:\s+g\d{1,2})?|"
             r"inspiron\s+\d{1,2}|xps\s+\d{1,2}|macbook\s+(?:air|pro)(?:\s+m[1-5])?|"
             r"pavilion\s+[a-z0-9-]+|zenbook\s+[a-z0-9-]+|vivobook\s+[a-z0-9-]+|"
             r"tuf\s+[a-z0-9-]+|rog\s+[a-z0-9-]+|legion\s+[a-z0-9-]+|"
@@ -109,7 +111,7 @@ def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Di
             title, re.I)
         model = re.sub(r"\s+", " ", model_match.group(0)).strip(" -") if model_match else None
         if not model and series_param:
-            model = series_param.strip()
+            model = re.sub(r"\s*\((?:processor|procesor|cpu)[^)]*\)\s*", "", series_param, flags=re.I).strip()
             model_source = "series_param"
         else:
             model_source = "title" if model else "none"
@@ -118,7 +120,7 @@ def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Di
         return next((str(v).strip() for k, v in params.items() if k.lower() in keys and str(v).strip()), None)
 
     cpu_param = param_value({"procesor", "model procesora", "cpu", "seria procesora"})
-    cpu_match = re.search(r"\b((?:intel\s+)?core\s+i[3579]-?\w+|core\s+ultra\s+[579]\s+\w+|ryzen\s+[3579]\s+\w+|apple\s+m[1-5](?:\s+(?:pro|max|ultra))?)\b", lower, re.I)
+    cpu_match = re.search(r"\b((?:intel\s+)?core\s+i[3579]-?\w+|core\s+ultra\s+[579]\s+\w+|ryzen\s+[3579]\s+\w+|apple\s+m[1-5](?:\s+(?:pro|max|ultra))?)\b", full_text, re.I)
     cpu = cpu_match.group(1) if cpu_match else cpu_param
     gpu = param_value({"karta graficzna", "układ graficzny", "uklad graficzny", "gpu"})
     gpu_type = param_value({"rodzaj karty graficznej", "typ karty graficznej"})
@@ -133,34 +135,67 @@ def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Di
         m = re.search(r"\b(rtx\s?\d{3,4}(?:\s?ti)?|gtx\s?\d{3,4}(?:\s?ti)?|radeon\s?(?:rx\s?)?\d{3,4}|arc\s?a\d{3})\b", lower, re.I)
         gpu = m.group(1) if m else None
     ram_gb = None
-    ram_source = ram_raw or ""
+    ram_bucket = None
+    ram_source = "none"
     if ram_raw:
-        m = re.search(r"\d{1,3}", ram_raw)
-        ram_gb = int(m.group()) if m else None
+        m = re.fullmatch(r"\s*(\d{1,3})\s*(?:gb)?\s*", ram_raw, re.I)
+        if m:
+            ram_gb = int(m.group(1))
+            ram_source = "params"
+        else:
+            ram_bucket = ram_raw
+            ram_source = "params_bucket"
     if ram_gb is None:
-        m = re.search(r"\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\s*(?:ram|d\d|lpddr)?\b|\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\b.{0,10}\bram\b", lower)
-        ram_gb = int(next(x for x in m.groups() if x)) if m else None
-        ram_source = "title" if m else "none"
+        m = re.search(r"\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\s*(?:ram|ddr[345]?|lpddr[345x]?)\b|\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\b.{0,10}\bram\b", title, re.I)
+        if m:
+            ram_gb = int(next(x for x in m.groups() if x))
+            ram_source = "title"
+    if ram_gb is None and not ram_bucket:
+        m = re.search(r"\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\s*(?:ram|ddr[345]?|lpddr[345x]?)\b|\b(4|8|12|16|18|24|32|36|48|64|96|128)\s*gb\b.{0,10}\bram\b", description, re.I)
+        if m:
+            ram_gb = int(next(x for x in m.groups() if x))
+            ram_source = "description"
+    elif ram_gb is None:
+        ram_source = "params_bucket"
     storage_gb = None
+    storage_source = "params_bucket" if storage_bucket else "none"
     if storage_raw:
-        m = re.search(r"(\d+(?:[.,]\d+)?)\s*(tb|gb)", storage_raw, re.I)
+        m = re.fullmatch(
+            r"\s*(?:(?:ssd|hdd|nvme)\s*)?(\d+(?:[.,]\d+)?)\s*(tb|gb)(?:\s*(?:ssd|hdd|nvme))?\s*",
+            storage_raw, re.I,
+        )
         if m:
             storage_gb = int(float(m.group(1).replace(",", ".")) * (1024 if m.group(2).lower() == "tb" else 1))
+            storage_source = "params"
+        elif not storage_bucket:
+            storage_bucket = storage_raw
+            storage_source = "params_bucket"
     if storage_gb is None:
-        m = re.search(r"\b(128|256|512|1000|1024|2000|2048|4000|4096)\s*(gb|tb)\b.{0,12}\b(ssd|hdd|nvme)?\b|\b(ssd|nvme)\s*(\d{3,4})\s*(gb|tb)\b", lower, re.I)
+        m = re.search(r"\b(128|256|512|1000|1024|2000|2048|4000|4096)\s*(gb|tb)\b.{0,12}\b(ssd|hdd|nvme)\b|\b(ssd|nvme)\s*(\d{3,4})\s*(gb|tb)\b", title, re.I)
         if m:
             value = m.group(1) or m.group(5)
             unit = m.group(2) or m.group(6)
             storage_gb = int(value) * (1024 if unit and unit.lower() == "tb" else 1)
+            storage_source = "title"
     screen_inches = None
     screen_candidate = screen_raw or ""
+    screen_bucket = None
+    screen_source = "params" if screen_candidate else "none"
+    if re.search(r"\d\s*[-–]\s*\d", screen_candidate):
+        screen_bucket = screen_candidate
+        screen_candidate = ""
+        screen_source = "params_bucket"
     if not screen_candidate:
-        m = re.search(r"\b(11(?:[.,]6)?|12(?:[.,]\d)?|13(?:[.,]\d)?|14(?:[.,]\d)?|15(?:[.,]\d)?|16(?:[.,]\d)?|17(?:[.,]\d)?|18(?:[.,]\d)?)\s*(?:in|inch|cala|cali|\")", lower)
+        m = re.search(r"\b(11(?:[.,]6)?|12(?:[.,]\d)?|13(?:[.,]\d)?|14(?:[.,]\d)?|15(?:[.,]\d)?|16(?:[.,]\d)?|17(?:[.,]\d)?|18(?:[.,]\d)?)\s*(?:in|inch|cala|cali|\")", title, re.I)
         screen_candidate = m.group(1) if m else ""
+        if m:
+            screen_source = "title"
     if screen_candidate:
         m = re.search(r"\d{2}(?:[.,]\d)?", screen_candidate)
         if m:
             screen_inches = int(round(float(m.group().replace(",", ".")) * 10))
+            if screen_source == "none":
+                screen_source = "params"
 
     raw_price = detail.get("raw_price") or offer.get("raw_price") or ""
     price, is_free, negotiable = _normalize_price(raw_price)
@@ -180,10 +215,12 @@ def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Di
         "gpu": gpu,
         "gpu_type": gpu_type,
         "ram_gb": ram_gb,
+        "ram_bucket": ram_bucket,
         "storage_gb": storage_gb,
         "storage_bucket": storage_bucket,
         "storage_type": storage_type,
         "screen_inches_tenths": screen_inches,
+        "screen_bucket": screen_bucket,
         "operating_system": operating_system,
         "condition": condition,
         "product_kind": "laptop",
@@ -201,10 +238,10 @@ def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Di
                         "category": "laptops", "cpu_source": "title" if cpu_match else ("params" if cpu else "none"),
                         "gpu_source": "params" if gpu else ("title" if gpu else "none"),
                         "gpu_type_source": "params" if gpu_type else "none",
-                        "ram_source": "params" if ram_raw else ram_source,
-                        "storage_source": "params" if (storage_raw or storage_bucket) else ("title" if storage_gb is not None else "none"),
+                        "ram_source": ram_source,
+                        "storage_source": storage_source,
                         "storage_type_source": "params" if storage_type else "none",
-                        "screen_source": "params" if screen_raw and screen_inches is not None else ("title" if screen_inches is not None else "none"),
+                        "screen_source": screen_source,
                         "operating_system_source": "params" if operating_system else ("title" if re.search(r"\bwindows\s?\d{1,2}\b", lower) else "none"),
                         "condition_source": "params" if condition else "none"},
     }

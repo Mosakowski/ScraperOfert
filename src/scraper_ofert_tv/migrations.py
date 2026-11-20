@@ -245,5 +245,20 @@ def apply_migrations(db_path: Path = None):
             VALUES (4, 'add_category_schemas_and_scoring', ?)
         """, (now_iso(),))
         conn.commit()
+
+    # Migration 5: keep the persisted laptop attribute contract aligned with normalization.
+    cursor.execute("SELECT 1 FROM schema_migrations WHERE version=5")
+    if not cursor.fetchone():
+        from scraper_ofert_tv.categories import CATEGORY_DEFINITIONS
+        for category_id, definition in CATEGORY_DEFINITIONS.items():
+            cursor.execute(
+                "UPDATE categories SET attribute_schema_json=? WHERE id=?",
+                (json.dumps(definition.get("attribute_schema", []), ensure_ascii=False), category_id),
+            )
+        cursor.execute(
+            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (5, 'sync_category_attribute_schema', ?)",
+            (now_iso(),),
+        )
+        conn.commit()
         
     conn.close()

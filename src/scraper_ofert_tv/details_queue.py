@@ -1,6 +1,9 @@
 import sqlite3
 from typing import List, Dict, Any
+from datetime import datetime, timedelta, timezone
 from scraper_ofert_tv.storage import get_connection, now_iso
+
+DEFAULT_STALE_AFTER_DAYS = 7
 
 def add_to_queue(conn: sqlite3.Connection, offer_id: int, reason: str, priority: int = 100):
     """
@@ -25,12 +28,25 @@ def get_pending_tasks(conn: sqlite3.Connection, limit: int = 10, mode: str = Non
     """Pobiera zadania z kolejki detali po priorytecie."""
     cursor = conn.cursor()
     now = now_iso()
+    stale_before = (datetime.now(timezone.utc) - timedelta(days=DEFAULT_STALE_AFTER_DAYS)).isoformat()
+    # Stare zadania pomijamy dopiero wtedy, gdy oferta nie była ponownie widziana.
+    # Świeży skan aktualizuje last_seen_at i pozwala odzyskać zadanie z zaległej kolejki.
+    cursor.execute("""
+        UPDATE details_queue
+        SET status='skipped', last_error='stale_offer_not_seen_recently',
+            finished_at=?, updated_at=?
+        WHERE status='pending' AND offer_id IN (
+            SELECT id FROM offers WHERE gone_at IS NOT NULL OR last_seen_at < ?
+        )
+    """, (now, now, stale_before))
+    conn.commit()
     
     query = """
         SELECT dq.* 
         FROM details_queue dq
         JOIN offers o ON dq.offer_id = o.id
         WHERE dq.status = 'pending' AND (dq.available_after IS NULL OR dq.available_after <= ?)
+          AND o.gone_at IS NULL AND o.last_seen_at >= ?
         ORDER BY 
             CASE WHEN ? = 'lodz_alerts' AND (
                 o.city LIKE '%lodz%' OR o.city LIKE '%łódź%' OR 
@@ -43,7 +59,7 @@ def get_pending_tasks(conn: sqlite3.Connection, limit: int = 10, mode: str = Non
         LIMIT ?
     """
     
-    cursor.execute(query, (now, mode, limit))
+    cursor.execute(query, (now, stale_before, mode, limit))
     return [dict(row) for row in cursor.fetchall()]
 
 def mark_task_processing(conn: sqlite3.Connection, task_id: int):

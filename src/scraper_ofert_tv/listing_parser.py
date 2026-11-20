@@ -67,8 +67,7 @@ def _parse_card(card, base_url: str, position: int) -> Dict[str, Any]:
         if match:
             olx_offer_id = match.group(1)
             
-    title_tag = card.css_first('h6')
-    title = title_tag.text(strip=True) if title_tag else ""
+    title = _extract_card_title(card)
     
     price_tag = card.css_first('p[data-testid="ad-price"]')
     raw_price = price_tag.text(strip=True) if price_tag else ""
@@ -98,6 +97,35 @@ def _parse_card(card, base_url: str, position: int) -> Dict[str, Any]:
         'listing_thumbnail_url': thumbnail,
         'listing_position': position
     }
+
+
+def _extract_card_title(card) -> str:
+    # OLX zmienia znaczniki tytułu między wariantami kart. Najpierw używamy
+    # jawnych kontenerów tytułu, potem nagłówków, a na końcu tekstu linku oferty.
+    for selector in (
+        '[data-testid="ad-title"]', '[data-testid*="title"]',
+        '[data-cy="ad-card-title"]', '[data-cy*="title"]',
+        'h6', 'h5', 'h4',
+    ):
+        node = card.css_first(selector)
+        if not node:
+            continue
+        value = re.sub(r"\s+", " ", node.text(strip=True, separator=" ")).strip()
+        if 3 <= len(value) <= 200:
+            return value
+
+    link = card.css_first('a[href*="/d/oferta/"]')
+    if not link:
+        return ""
+    for attribute in ("title", "aria-label"):
+        value = re.sub(r"\s+", " ", link.attributes.get(attribute, "")).strip()
+        if 3 <= len(value) <= 200:
+            return value
+
+    value = re.sub(r"\s+", " ", link.text(strip=True, separator=" ")).strip()
+    if 3 <= len(value) <= 200:
+        return value
+    return ""
 
 def _parse_price(raw_price: str) -> Tuple[int, bool, bool]:
     if not raw_price:

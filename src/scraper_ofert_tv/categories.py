@@ -47,8 +47,8 @@ CATEGORY_DEFINITIONS: dict[str, dict[str, Any]] = {
             {"key": "search[filter_enum_disksize_laptops][0]", "label": "Wielkość dysku", "type": "select", "options": [
                 "up-to-128gb", "129gb-256gb", "257gb-512gb", "513gb-999gb", "1tb-and-more", "2tb", "4tb-more"]},
         ],
-        "attribute_schema": ["brand", "model", "cpu", "gpu", "gpu_type", "ram_gb", "storage_gb",
-                             "storage_bucket", "storage_type", "screen_inches_tenths", "operating_system", "condition"],
+        "attribute_schema": ["brand", "model", "cpu", "gpu", "gpu_type", "ram_gb", "ram_bucket", "storage_gb",
+                             "storage_bucket", "storage_type", "screen_inches_tenths", "screen_bucket", "operating_system", "condition"],
         "domain": "laptops",
     },
 }

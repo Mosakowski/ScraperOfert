@@ -1,6 +1,6 @@
 # DB Schema - Scraper Ofert OLX
 
-Ten dokument opisuje schemat SQLite aplikacji. SQLite jest źródłem prawdy, a Excel jest raportem generowanym z bazy. Migracja 3 dodała katalog `categories`, `search_profiles`, kategorię i elastyczne atrybuty do ofert oraz identyfikator profilu w historii przebiegów. Migracja 4 dodała schematy filtrów i atrybutów oraz ustawienia scoringu dla kategorii. `size_profiles` pozostaje tabelą zgodności dla historii TV.
+Ten dokument opisuje schemat SQLite aplikacji. SQLite jest źródłem prawdy, a Excel jest raportem generowanym z bazy. Migracja 3 dodała katalog `categories`, `search_profiles`, kategorię i elastyczne atrybuty do ofert oraz identyfikator profilu w historii przebiegów. Migracja 4 dodała schematy filtrów i atrybutów oraz ustawienia scoringu dla kategorii. Migracja 5 synchronizuje schemat atrybutów z normalizacją laptopów. `size_profiles` pozostaje tabelą zgodności dla historii TV.
 
 Typy sa opisane pod SQLite:
 
