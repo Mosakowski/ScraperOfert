@@ -10,6 +10,7 @@ import json
 
 from scraper_ofert_tv.settings_service import SettingsService
 import os
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +18,16 @@ class DetailWorker:
     def __init__(self):
         settings = SettingsService()
         scraper_settings = settings.get_scraper_settings()
+        rate = settings.get_rate_limit_settings()
+        from scraper_ofert_tv.rate_limiter import RateLimiter
+        limiter = RateLimiter(requests_per_minute=min(int(rate.get("requests_per_minute", 30)), 15),
+                              delay_details=max(float(rate.get("delay_between_details", 4)), 4))
         
         if scraper_settings.get("fetch_backend") == "playwright":
             from scraper_ofert_tv.browser_scraper import BrowserScraper
-            self.scraper = BrowserScraper()
+            self.scraper = BrowserScraper(limiter)
         else:
-            self.scraper = DetailScraper()
+            self.scraper = DetailScraper(limiter)
         
     def work(self, limit: int = 10, mode: str = None):
         conn = get_connection()
@@ -81,7 +86,8 @@ class DetailWorker:
                     mark_task_done(conn, task_id)
                 elif err in ["captcha_detected", "rate_limited", "forbidden_403"]:
                     # Powinnismy sprobowac jeszcze raz, z wiekszym opoznieniem (TODO: backoff details)
-                    mark_task_failed(conn, task_id, err)
+                    retry_at = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
+                    mark_task_failed(conn, task_id, err, retry_after_iso=retry_at)
                     break # Wstrzymujemy procesowanie bo dostalismy bana
                 else:
                     mark_task_failed(conn, task_id, err)
@@ -111,6 +117,8 @@ class DetailWorker:
             system_status = None
             if "reject" in actions:
                 system_status = "rejected"
+            elif normalized.get('attributes', {}).get('sale_format') == 'bundle_multiple':
+                system_status = 'review_bundle'
             elif confidence < 0.3: # Jesli strasznie slabo znormalizowane, to weak match
                 system_status = "weak_match"
                 

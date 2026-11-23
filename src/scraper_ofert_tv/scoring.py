@@ -2,6 +2,7 @@ import json
 import sqlite3
 from typing import Dict, Any, List, Optional
 from scraper_ofert_tv.storage import now_iso
+from scraper_ofert_tv.offer_relevance import eligible_for_details
 
 def score_offers(conn: sqlite3.Connection):
     """
@@ -17,9 +18,9 @@ def score_offers(conn: sqlite3.Connection):
     cursor.execute("""
         SELECT o.* 
         FROM offers o
-        WHERE o.system_status IN ('new', 'weak_match')
-          AND o.gone_at IS NULL
+        WHERE o.gone_at IS NULL
           AND o.price_pln > 0
+          AND EXISTS (SELECT 1 FROM offer_snapshots s WHERE s.offer_id=o.id AND s.scan_mode='detail_fetch')
     """)
     offers = cursor.fetchall()
     
@@ -37,6 +38,9 @@ def score_offers(conn: sqlite3.Connection):
         
         from scraper_ofert_tv.comparison import generate_comparable_keys, get_strategy_cap, calculate_normalization_confidence
         category_id = offer["category_id"] or "televisions"
+        if not eligible_for_details(category_id, offer["url"]):
+            _save_score(conn, offer_id, None, 0, 'weak_match', None, now, reasons=['off_category'])
+            continue
         normalized = {
             'brand': offer['brand'],
             'model_name': offer['model'],
@@ -46,6 +50,12 @@ def score_offers(conn: sqlite3.Connection):
             'native_olx_bucket': offer['olx_size_bucket'],
             'attributes': json.loads(offer["attributes_json"] or "{}")
         }
+        has_reject_rule = cursor.execute(
+            "SELECT 1 FROM rule_matches WHERE offer_id=? AND action='reject' LIMIT 1", (offer_id,)
+        ).fetchone()
+        if normalized['attributes'].get('sale_format') == 'bundle_multiple' and not has_reject_rule:
+            _save_score(conn, offer_id, None, 0, 'review_bundle', None, now, reasons=['bundle_multiple'])
+            continue
         keys = generate_comparable_keys(normalized, category_id=category_id)
         
         scoring_settings = {**global_settings, **category_settings.get(category_id, {})}

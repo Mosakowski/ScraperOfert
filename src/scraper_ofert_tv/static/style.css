@@ -129,7 +129,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .empty-cell { height: 105px; color: var(--muted) !important; text-align: center; }
 .status-badge { display: inline-flex; max-width: 100%; min-height: 20px; align-items: center; padding: 2px 7px; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 20px; background: #f5f6f7; color: #69717b; font-size: 8px; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
 .status-active, .status-opportunity, .status-alert, .status-alerted { border-color: #d0e8d9; background: var(--green-soft); color: #28754f; }
-.status-candidate, .status-needs_review, .status-priced { border-color: #f1dfbf; background: var(--amber-soft); color: #87590f; }
+.status-candidate, .status-needs_review, .status-review_bundle, .status-priced { border-color: #f1dfbf; background: var(--amber-soft); color: #87590f; }
 .status-rejected, .status-gone { border-color: #f0d5d6; background: var(--red-soft); color: #a04349; }
 .status-neutral, .status-new, .status-default, .status-weak_match { border-color: #e5e7eb; background: #f5f6f7; color: #737a84; }
 .date-cell { min-width: 128px; color: #898f99 !important; font-size: 8px; white-space: nowrap; }

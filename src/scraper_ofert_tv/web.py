@@ -40,6 +40,7 @@ OFFER_STATUS_LABELS = {
     "opportunity": "Okazja",
     "candidate": "Kandydat",
     "needs_review": "Do sprawdzenia",
+    "review_bundle": "Zestaw do sprawdzenia",
     "weak_match": "Słabe dopasowanie",
     "rejected": "Odrzucona",
     "alert": "Alert",
@@ -259,6 +260,10 @@ def list_offers(
         )
         offer["location_label"] = " · ".join(filter(None, [offer["city"], offer["district"]])) or offer["raw_location"] or "—"
         offer["details_label"] = " · ".join(filter(None, [offer["brand"], offer["model"]])) or "Brak wykrytego modelu"
+        if offer["category_id"] == "televisions" and offer["attributes"].get("sale_format") == "bundle_multiple":
+            offer["details_label"] += " · zestaw"
+        elif offer["category_id"] == "televisions" and offer["attributes"].get("sale_format") == "single_with_accessories":
+            offer["details_label"] += " · z dodatkami"
         if offer["category_id"] == "laptops":
             offer["technology_label"] = " · ".join(filter(None, [offer["attributes"].get("cpu"), offer["attributes"].get("gpu")])) or "—"
             offer["details_label"] += (f" · {offer['attributes'].get('ram_gb')} GB RAM" if offer["attributes"].get("ram_gb") else "")

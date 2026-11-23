@@ -7,7 +7,8 @@ BRANDS = [
     "samsung", "lg", "sony", "philips", "panasonic", "tcl", "hisense", "toshiba", 
     "sharp", "manta", "kiano", "xiaomi", "blaupunkt", "thomson", "telefunken", "jvc", "hitachi",
     "apple", "lenovo", "dell", "hp", "hewlett-packard", "asus", "acer", "msi", "gigabyte",
-    "razer", "huawei", "microsoft", "dynabook", "fujitsu", "medion", "realme"
+    "razer", "huawei", "microsoft", "dynabook", "fujitsu", "medion", "realme",
+    "daewoo", "funai", "level"
 ]
 
 # Technologie
@@ -37,7 +38,7 @@ def normalize_offer_data(offer: Dict[str, Any], detail: Dict[str, Any], specs_ca
     
     # Marka
     params = detail.get('params', {})
-    brand, brand_src = _normalize_brand(params.get('Marka', ''), full_title, description)
+    brand, brand_src = _normalize_brand(_tv_param(params, 'Marka', 'Producent'), full_title, description)
     normalized['brand'] = brand
     diagnostics['brand_source'] = brand_src
     
@@ -47,7 +48,7 @@ def normalize_offer_data(offer: Dict[str, Any], detail: Dict[str, Any], specs_ca
     diagnostics['model_source'] = model_src
     
     # Rozmiar
-    inches, size_src = _normalize_size(params.get('Przekątna ekranu', ''), full_text, full_title, description, model)
+    inches, size_src = _normalize_size(_tv_param(params, 'Przekątna ekranu', 'Rozmiar'), full_text, full_title, description, model)
     normalized['size_inches'] = inches
     normalized['native_olx_bucket'] = offer.get('olx_size_bucket')
     diagnostics['size_source'] = size_src
@@ -74,6 +75,10 @@ def normalize_offer_data(offer: Dict[str, Any], detail: Dict[str, Any], specs_ca
     normalized['has_box'] = int(bool(re.search(r'\bpudełk(o|iem|a)\b|\bkarton(em|u)?\b|\boryginaln(e|ym) opakowani(e|em|u)\b', full_text)))
     normalized['pickup_only'] = int(bool(re.search(r'\bodbi(o|ó)r (tylko )?osobisty\b|\bnie wysyłam\b', full_text)))
     normalized['delivery_possible'] = int(bool(re.search(r'\bwysyłka\b|\bmożliwy transport\b|\bdostarczę\b', full_text)))
+
+    sale_format, sale_reason = _classify_tv_sale(full_title, description)
+    normalized['attributes'] = {'sale_format': sale_format}
+    diagnostics['sale_format_reason'] = sale_reason
     
     normalized['diagnostics'] = diagnostics
     
@@ -81,6 +86,23 @@ def normalize_offer_data(offer: Dict[str, Any], detail: Dict[str, Any], specs_ca
         enrich_with_model_specs(normalized, diagnostics, specs_cache)
         
     return normalized
+
+
+def _tv_param(params: dict, *names: str) -> str:
+    lookup = {str(key).strip().casefold(): str(value).strip() for key, value in params.items()}
+    return next((lookup[name.casefold()] for name in names if lookup.get(name.casefold())), '')
+
+
+def _classify_tv_sale(title: str, description: str) -> Tuple[str, str]:
+    title_low = title.casefold()
+    text = f'{title} {description}'.casefold()
+    if re.search(r'\b(?:dwa|dwie|kilka|[2-9])\s+(?:telewizor(?:y|ów)?|tv)\b', text) or re.search(r'\btelewizory\b.{0,40}\b(?:całość|razem|komplet)\b', text):
+        return 'bundle_multiple', 'multiple_tvs'
+    if re.search(r'\b(?:szafka|stolik|komoda)\b', title_low) and re.search(r'\b(?:telewizor|tv)\b', title_low):
+        return 'bundle_multiple', 'furniture_in_title'
+    if re.search(r'\b(?:dekoder|pilot|anten|uchwyt|podstawk)\w*\b', text):
+        return 'single_with_accessories', 'accessories_mentioned'
+    return 'single', 'one_tv'
 
 
 def _normalize_laptop_offer(offer: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
@@ -337,7 +359,7 @@ def _normalize_size(param_size: str, full_text: str, title: str, desc: str, mode
             if 24 <= val <= 98: return val, "model"
     
     for src_text, src_name in [(title, "title"), (desc, "description")]:
-        match = re.search(r'\b(\d{2,3})\s*(cali|cale|cal|inch|"|'')\b', src_text.lower())
+        match = re.search(r'\b(\d{2,3})\s*(?:cali|cale|cal|inch|["″`]+)(?=\s|$|[,.+])', src_text.lower())
         if match:
             val = int(match.group(1))
             if 10 <= val <= 150: return val, src_name
@@ -362,6 +384,14 @@ def _extract_model(brand: str, params: dict, title: str, desc: str) -> Tuple[str
     # false positive avoid
     fps = {"4k", "led", "smart", "smarttv", "tv", "hdr", "hd", "lcd", "oled", "qled", "uhd", "sprzedam"}
     fps.add(brand.lower())
+
+    param_model = _tv_param(params, 'Model', 'Nazwa modelu')
+    if param_model:
+        candidate = param_model.split('/', 1)[0].strip().upper()
+        if (re.fullmatch(r'[A-Z0-9][A-Z0-9-]{3,24}', candidate)
+                and any(char.isalpha() for char in candidate)
+                and any(char.isdigit() for char in candidate)):
+            return candidate, 'params'
     
     # 1. Wzorce dla poszczególnych marek
     patterns = []

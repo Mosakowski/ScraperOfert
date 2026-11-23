@@ -2,6 +2,7 @@ import sqlite3
 from typing import List, Dict, Any
 from datetime import datetime, timedelta, timezone
 from scraper_ofert_tv.storage import get_connection, now_iso
+from scraper_ofert_tv.offer_relevance import eligible_for_details
 
 DEFAULT_STALE_AFTER_DAYS = 7
 
@@ -29,6 +30,19 @@ def get_pending_tasks(conn: sqlite3.Connection, limit: int = 10, mode: str = Non
     cursor = conn.cursor()
     now = now_iso()
     stale_before = (datetime.now(timezone.utc) - timedelta(days=DEFAULT_STALE_AFTER_DAYS)).isoformat()
+    # Also clean up tasks created by earlier scans with broad OLX fallback results.
+    rows = conn.execute("""
+        SELECT dq.id, o.category_id, o.url FROM details_queue dq
+        JOIN offers o ON o.id = dq.offer_id WHERE dq.status = 'pending'
+    """).fetchall()
+    excluded = [row["id"] for row in rows if not eligible_for_details(row["category_id"], row["url"])]
+    if excluded:
+        conn.executemany("""
+            UPDATE details_queue SET status='skipped', last_error='unrelated_listing',
+                finished_at=?, updated_at=? WHERE id=?
+        """, [(now, now, task_id) for task_id in excluded])
+        conn.commit()
+
     # Stare zadania pomijamy dopiero wtedy, gdy oferta nie była ponownie widziana.
     # Świeży skan aktualizuje last_seen_at i pozwala odzyskać zadanie z zaległej kolejki.
     cursor.execute("""
@@ -54,8 +68,9 @@ def get_pending_tasks(conn: sqlite3.Connection, limit: int = 10, mode: str = Non
                 o.raw_location LIKE '%lodzkie%' OR o.raw_location LIKE '%łódzkie%' OR
                 EXISTS (SELECT 1 FROM offer_snapshots os WHERE os.offer_id = o.id AND os.scan_mode = 'lodz_alerts')
             ) THEN 1 ELSE 0 END DESC,
-            dq.priority DESC, 
-            dq.created_at ASC 
+            dq.priority DESC,
+            dq.attempts ASC,
+            dq.created_at DESC
         LIMIT ?
     """
     

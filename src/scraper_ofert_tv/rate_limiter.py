@@ -1,5 +1,6 @@
 import time
 import random
+from collections import deque
 
 class RateLimiter:
     def __init__(
@@ -23,6 +24,19 @@ class RateLimiter:
         self.details_this_run = 0
         
         self.consecutive_errors = 0
+        self.request_times = deque()
+
+    def _wait_for_minute_slot(self):
+        if self.requests_per_minute <= 0:
+            return
+        while True:
+            now = time.monotonic()
+            while self.request_times and self.request_times[0] <= now - 60:
+                self.request_times.popleft()
+            if len(self.request_times) < self.requests_per_minute:
+                self.request_times.append(now)
+                return
+            time.sleep(max(0.1, self.request_times[0] + 60 - now))
         
     def _sleep_with_jitter(self, base_delay: float):
         jitter = base_delay * self.jitter_factor
@@ -31,10 +45,12 @@ class RateLimiter:
         time.sleep(actual_delay)
         
     def wait_for_listing(self):
+        self._wait_for_minute_slot()
         self.requests_this_run += 1
         self._sleep_with_jitter(self.delay_listings)
         
     def wait_for_detail(self):
+        self._wait_for_minute_slot()
         self.requests_this_run += 1
         self.details_this_run += 1
         self._sleep_with_jitter(self.delay_details)

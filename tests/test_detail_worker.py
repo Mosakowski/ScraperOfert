@@ -31,7 +31,7 @@ def test_detail_worker_schema_match(monkeypatch):
     now = now_iso()
     conn.execute("""
         INSERT INTO offers (source, url, url_hash, first_seen_at, last_seen_at, created_at, updated_at) 
-        VALUES ('olx', 'http://example.com/tv', 'hash123', ?, ?, ?, ?)
+        VALUES ('olx', 'https://www.olx.pl/d/oferta/tv-samsung-CID99-ID123.html', 'hash123', ?, ?, ?, ?)
     """, (now, now, now, now))
     offer_id = conn.cursor().execute("SELECT last_insert_rowid()").fetchone()[0]
     

@@ -277,8 +277,11 @@ Statusy systemowe:
 - `opportunity`
 - `needs_review`
 - `weak_match`
+- `review_bundle` (zestaw wymagający osobnej oceny)
 - `stale_reference`
 - `rejected`
+
+Dla kategorii TV `attributes_json.sale_format` przyjmuje `single`, `single_with_accessories` albo `bundle_multiple`. Zestawy wielu produktów pozostają w bazie, ale nie tworzą referencji cenowych i nie dostają automatycznej oceny okazji. `normalization_diagnostics_json.sale_format_reason` zapisuje powód klasyfikacji.
 - `gone`
 - `alerted`
 

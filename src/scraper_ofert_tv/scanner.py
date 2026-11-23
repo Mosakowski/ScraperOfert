@@ -14,6 +14,7 @@ from scraper_ofert_tv.rate_limiter import RateLimiter
 from scraper_ofert_tv.listing_scraper import ListingScraper
 from scraper_ofert_tv.listing_parser import parse_listing
 from scraper_ofert_tv.details_queue import add_to_queue
+from scraper_ofert_tv.offer_relevance import eligible_for_details
 import os
 import json
 
@@ -22,10 +23,12 @@ logger = logging.getLogger(__name__)
 class Scanner:
     def __init__(self):
         self.settings = SettingsService()
+        self.traffic_policy = self.settings.get_traffic_policy()
         self.rate_limiter = RateLimiter(
             requests_per_minute=self.settings.get_rate_limit_settings().get("requests_per_minute", 30),
             delay_listings=self.settings.get_rate_limit_settings().get("delay_between_requests", 2)
         )
+        self.rate_limiter.max_requests_per_run = int(self.traffic_policy["max_pages_per_run"])
         scraper_settings = self.settings.get_scraper_settings()
         if scraper_settings.get("fetch_backend") == "playwright":
             from scraper_ofert_tv.browser_scraper import BrowserScraper
@@ -61,7 +64,8 @@ class Scanner:
                 location = profile_filters.get("location") or mode_settings.get("location", "lodz")
                 radius = int(profile_filters.get("radius_km") or mode_settings.get("radius_km", 50))
             mode_max_pages = int(mode_settings.get("max_pages_per_profile", 25))
-            profile_max_pages = min(int(profile.get("max_pages") or mode_max_pages), mode_max_pages)
+            profile_max_pages = min(int(profile.get("max_pages") or mode_max_pages), mode_max_pages,
+                                    int(self.traffic_policy["max_pages_per_profile"]))
             profile_result = self._scan_profile(
                 conn=conn,
                 run_id=run_id,
@@ -81,8 +85,11 @@ class Scanner:
             if self.rate_limiter.is_run_limit_reached():
                 logger.info("Osiagnieto globalny limit zapytan. Przerywam.")
                 break
+            if profile_result["status"] == "temporarily_blocked":
+                logger.warning("OLX ograniczyl dostep. Koncze skan bez dalszych zapytan.")
+                break
 
-        if self.rate_limiter.is_run_limit_reached():
+        if self.rate_limiter.is_run_limit_reached() and len(profile_results) < len(profiles):
             run_status = "partial"
             run_stop_reason = "run_limit_reached"
         elif profile_results and all(r["status"] in ("failed", "temporarily_blocked") for r in profile_results):
@@ -247,7 +254,8 @@ class Scanner:
                     new_offers_count += 1
                     # Dodaj do kolejki detali (nowa oferta)
                     priority = 300 if mode == "lodz_alerts" else 100
-                    add_to_queue(conn, offer_id, "new_offer", priority)
+                    if eligible_for_details(profile["category_id"], offer_data["url"]):
+                        add_to_queue(conn, offer_id, "new_offer", priority)
                 else:
                     known_offers_count += 1
                     # Jesli zmienila sie cena, tu mozna dodac check i wrzucic na detale z "price_changed"

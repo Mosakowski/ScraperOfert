@@ -9,6 +9,12 @@ from scraper_ofert_tv.scoring import score_offers
 from scraper_ofert_tv.alerts import process_alerts
 from scraper_ofert_tv.export_excel import export_to_excel
 from pathlib import Path
+from datetime import timedelta
+from scraper_ofert_tv.settings_service import SettingsService
+
+
+def _details_per_cycle():
+    return int(SettingsService().get_traffic_policy()["details_per_cycle"])
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -22,7 +28,7 @@ def run_workflow_national():
         
         # Pobranie szczegolow dla znalezionych w kolejce
         worker = DetailWorker()
-        worker.work(limit=100) # Pobierz np. 100 max detali w cyklu
+        worker.work(limit=_details_per_cycle())
         
         # Przeliczanie bazy i scoring
         conn = get_connection()
@@ -40,7 +46,7 @@ def run_workflow_lodz():
         scanner.run_scan(mode='lodz_alerts')
         
         worker = DetailWorker()
-        worker.work(limit=50)
+        worker.work(limit=_details_per_cycle())
         
         conn = get_connection()
         # Tylko oceniamy nowosci lodzkie i sprawdzamy alerty, bez przeliczania median
@@ -66,7 +72,7 @@ def run_workflow_profile(profile_id: str):
     logger.info("Uruchamiam profil monitorowania: %s", profile_id)
     try:
         Scanner().run_scan(mode="national", specific_profile=profile_id)
-        DetailWorker().work(limit=100)
+        DetailWorker().work(limit=_details_per_cycle())
         conn = get_connection()
         recalculate_market(conn)
         score_offers(conn)
@@ -77,8 +83,8 @@ def run_workflow_profile(profile_id: str):
         logger.exception("Błąd profilu monitorowania %s", profile_id)
 
 def start_scheduler():
-    from scraper_ofert_tv.settings_service import SettingsService
     service = SettingsService()
+    stagger_minutes = int(service.get_traffic_policy()["profile_stagger_minutes"])
     sched_settings = service.get_setting("scheduler", {"national_hours": 12, "lodz_hours": 2, "export_hours": 2})
     active_profiles = service.get_search_profiles(enabled_only=True)
     
@@ -90,12 +96,13 @@ def start_scheduler():
     
     if active_profiles:
         scheduled = 0
-        for profile in active_profiles:
+        for index, profile in enumerate(active_profiles):
             profile_mode = (profile.get("filters") or {}).get("mode", "national")
             inherited_interval = l_hours if profile_mode == "lodz_alerts" else n_hours
             interval = int(profile.get("interval_hours") or inherited_interval)
             if interval > 0:
-                schedule.every(interval).hours.do(run_workflow_profile, profile["id"])
+                job = schedule.every(interval).hours.do(run_workflow_profile, profile["id"])
+                job.next_run += timedelta(minutes=index * stagger_minutes)
                 scheduled += 1
         if e_hours > 0 and not scheduled:
             schedule.every(e_hours).hours.do(run_export)

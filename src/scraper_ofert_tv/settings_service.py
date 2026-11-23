@@ -52,6 +52,11 @@ class SettingsService:
 
     def get_scraper_settings(self):
         return self.get_setting("scraper_settings", {"fetch_backend": "httpx"})
+
+    def get_traffic_policy(self):
+        defaults = {"max_pages_per_profile": 5, "max_pages_per_run": 40,
+                    "details_per_cycle": 20, "profile_stagger_minutes": 10}
+        return {**defaults, **self.get_setting("traffic_policy", {})}
         
     def get_scoring_settings(self, category_id: str = None):
         settings = self.get_setting("scoring_settings", {})

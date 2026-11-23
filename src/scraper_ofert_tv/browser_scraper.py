@@ -3,6 +3,7 @@ import logging
 import time
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from scraper_ofert_tv.rate_limiter import RateLimiter
+from scraper_ofert_tv.response_status import classify_response
 
 logger = logging.getLogger(__name__)
 
@@ -62,31 +63,12 @@ class BrowserScraper:
             html = page.content()
             diag_info["body"] = html
             
-            html_lower = html.lower()
-            
-            if status in (403, 401) or "forbidden" in html_lower or "access denied" in html_lower:
-                self.rate_limiter.record_error()
+            error = classify_response(status, html)
+            if error:
+                if error in ("forbidden_403", "rate_limited", "captcha_detected"):
+                    self.rate_limiter.record_error()
                 page.close()
-                return None, "forbidden_403", diag_info
-                
-            if status != 200 and ("datadome" in html_lower or "captcha" in html_lower or "akces zablokowany" in html_lower):
-                self.rate_limiter.record_error()
-                page.close()
-                return None, "captcha_detected", diag_info
-                
-            if status == 404:
-                page.close()
-                return None, "not_found", diag_info
-                
-            if status == 429:
-                self.rate_limiter.record_error()
-                page.close()
-                return None, "rate_limited", diag_info
-                
-            if status >= 500:
-                self.rate_limiter.record_error()
-                page.close()
-                return None, f"server_error_{status}", diag_info
+                return None, error, diag_info
                 
             # Neutralne klikniecie consent popup (ONET_CMP) jesli przyslania, aczkolwiek dla samego HTML moze to nie byc konieczne
             try:
@@ -157,35 +139,12 @@ class BrowserScraper:
             
             html = page.content()
             diag_info["body"] = html
-            html_lower = html.lower()
-            
-            if status in (403, 401) or "forbidden" in html_lower or "access denied" in html_lower:
-                self.rate_limiter.record_error()
+            error = classify_response(status, html)
+            if error:
+                if error in ("forbidden_403", "rate_limited", "captcha_detected"):
+                    self.rate_limiter.record_error()
                 page.close()
-                return None, "forbidden_403", diag_info
-                
-            if status != 200 and ("datadome" in html_lower or "captcha" in html_lower or "akces zablokowany" in html_lower):
-                self.rate_limiter.record_error()
-                page.close()
-                return None, "captcha_detected", diag_info
-                
-            if status == 404:
-                page.close()
-                return None, "not_found", diag_info
-                
-            if status == 410:
-                page.close()
-                return None, "gone", diag_info
-                
-            if status == 429:
-                self.rate_limiter.record_error()
-                page.close()
-                return None, "rate_limited", diag_info
-                
-            if status >= 500:
-                self.rate_limiter.record_error()
-                page.close()
-                return None, f"server_error_{status}", diag_info
+                return None, error, diag_info
                 
             try:
                 if page.locator("button#onetrust-accept-btn-handler").is_visible(timeout=1000):

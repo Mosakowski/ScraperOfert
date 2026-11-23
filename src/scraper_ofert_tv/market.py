@@ -1,8 +1,10 @@
 import sqlite3
 import statistics
 import json
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 from scraper_ofert_tv.storage import get_connection, now_iso
+from scraper_ofert_tv.offer_relevance import eligible_for_details
 
 def recalculate_market(conn: sqlite3.Connection):
     """
@@ -21,18 +23,25 @@ def recalculate_market(conn: sqlite3.Connection):
     
     cursor.execute("""
         SELECT brand, model, technology, resolution, detected_size_inches, olx_size_bucket,
-               price_pln, category_id, attributes_json
+               price_pln, category_id, attributes_json, url
         FROM offers 
         WHERE price_pln > 0 
           AND (system_status != 'rejected' OR system_status IS NULL)
           AND gone_at IS NULL
-    """)
+          AND last_seen_at >= ?
+          AND EXISTS (SELECT 1 FROM offer_snapshots s WHERE s.offer_id=offers.id AND s.scan_mode='detail_fetch')
+          AND (COALESCE(category_id, 'televisions') != 'televisions' OR
+               (brand IS NOT NULL AND brand NOT IN ('inne', 'unknown') AND
+                json_extract(COALESCE(attributes_json, '{}'), '$.sale_format') IN ('single', 'single_with_accessories')))
+    """, ((datetime.now(timezone.utc) - timedelta(days=7)).isoformat(),))
     rows = cursor.fetchall()
     
     # Grupowanie cen
     market_data = {}
     for row in rows:
         category_id = row["category_id"] or "televisions"
+        if not eligible_for_details(category_id, row["url"]):
+            continue
         normalized = {
             'brand': row['brand'],
             'model_name': row['model'],

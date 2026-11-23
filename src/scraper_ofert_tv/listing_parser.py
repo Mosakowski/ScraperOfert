@@ -55,6 +55,9 @@ def _parse_card(card, base_url: str, position: int) -> Dict[str, Any]:
     href = a_tag.attributes.get('href')
     # Budowanie absolutnego URL, jesli to relatywny
     url = urllib.parse.urljoin(base_url, href)
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname not in ("olx.pl", "www.olx.pl") or not parts.path.startswith(("/d/oferta/", "/oferta/")):
+        return None
     
     # Canonical URL - do deduplikacji, pozbywamy sie np. parametrow ?reason=...
     canonical_url = url.split('?')[0] if '?' in url else url

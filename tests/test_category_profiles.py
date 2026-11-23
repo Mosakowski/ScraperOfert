@@ -197,7 +197,7 @@ def test_v3_database_upgrade_adds_category_schemas(tmp_path):
     apply_migrations(db_path)
     conn = _connection(db_path)
     versions = [row[0] for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
-    assert versions == [1, 2, 3, 4]
+    assert versions == [1, 2, 3, 4, 5]
     category = conn.execute("SELECT filter_schema_json FROM categories WHERE id='televisions'").fetchone()
     assert json.loads(category[0])[0]["key"] == "search[filter_enum_size][0]"
     conn.close()
